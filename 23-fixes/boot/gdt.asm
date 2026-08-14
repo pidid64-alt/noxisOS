@@ -23,6 +23,25 @@ gdt_data:
     db 11001111b
     db 0x0
 
+; 16-bit code segment for the real-mode thunk. base=0, limit=0xffff,
+; present, ring0, code, 16-bit default operand size (D bit = 0).
+gdt_rmcode:
+    dw 0xffff
+    dw 0x0
+    db 0x0
+    db 10011010b ; 0x9A: present, ring0, code, readable
+    db 00001111b ; limit bits 16-19 = 0xF; D bit (bit 6 of flags) = 0 => 16-bit
+    db 0x0
+
+; real-mode data segment. base=0, limit=0xffff, present, ring0, writable.
+gdt_rmdata:
+    dw 0xffff
+    dw 0x0
+    db 0x0
+    db 10010010b ; 0x92: present, ring0, data, writable
+    db 00001111b
+    db 0x0
+
 gdt_end:
 
 ; GDT descriptor
@@ -33,3 +52,5 @@ gdt_descriptor:
 ; define some constants for later use
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
+RM_CODE_SEG equ gdt_rmcode  - gdt_start
+RM_DATA_SEG equ gdt_rmdata  - gdt_start
