@@ -1,6 +1,7 @@
 #include "shell.h"
 #include "screen.h"
 #include "rtc.h"
+#include "../cpu/timer.h"
 #include "../cpu/isr.h"
 #include "../libc/string.h"
 #include "../libc/mem.h"
@@ -26,6 +27,7 @@ static void cmd_version(char *args);
 static void cmd_time(char *args);
 static void cmd_end(char *args);
 static void cmd_page(char *args);
+static void cmd_uptime(char *args);
 
 static shell_command_t COMMANDS[] = {
     {"HELP",    "list available commands",          cmd_help},
@@ -35,6 +37,7 @@ static shell_command_t COMMANDS[] = {
     {"TIME",    "show current date and time",       cmd_time},
     {"END",     "halt the CPU",                     cmd_end},
     {"PAGE",    "test kmalloc() and print an address", cmd_page},
+    {"UPTIME",  "show time elapsed since boot",     cmd_uptime},
 };
 
 #define NUM_COMMANDS (sizeof(COMMANDS) / sizeof(COMMANDS[0]))
@@ -92,6 +95,30 @@ static void cmd_page(char *args) {
     kprint(page_str);
     kprint(", physical address: ");
     kprint(phys_str);
+    kprint("\n");
+}
+
+/* The PIT runs at 50 Hz (set in init_timer via irq_install), so each tick is
+ * 1/50 s. Report elapsed time as whole seconds and centiseconds. */
+static void cmd_uptime(char *args) {
+    UNUSED(args);
+    /* Timer frequency is fixed at 50 Hz; mirror it here rather than pulling
+     * the value out of timer.c. */
+    const uint32_t FREQ = 50;
+    uint32_t secs  = tick / FREQ;
+    uint32_t centis = (tick % FREQ) * (100 / FREQ);
+
+    char buf[12];
+    int_to_ascii((int)secs, buf);
+    kprint("Uptime: ");
+    kprint(buf);
+    kprint(".");
+
+    /* Zero-pad the centiseconds to two digits (e.g. 7 -> "07"). */
+    if (centis < 10) kprint("0");
+    int_to_ascii((int)centis, buf);
+    kprint(buf);
+    kprint("s");
     kprint("\n");
 }
 
