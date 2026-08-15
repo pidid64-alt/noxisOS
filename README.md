@@ -29,7 +29,7 @@ for bare-metal programming on x86.
 | Interrupts | `18`–`20` | IDT, ISRs, IRQs, PIC remap, PIT timer. |
 | Keyboard | `21` | Scancode → ASCII, line buffering, backspace. |
 | Heap | `22` | `kmalloc` bump allocator. |
-| **Shell** | `24` | Command table + dispatch: `HELP`, `CLEAR`, `ECHO`, `VERSION`, `TIME`, `END`, `PAGE`. |
+| **Shell** | `24` | Command table + dispatch: `HELP`, `CLEAR`, `ECHO`, `VERSION`, `TIME`, `UPTIME`, `MEM`, `END`, `PAGE`. |
 | **RTC** | `24` | CMOS real-time clock driver for the `TIME` command. |
 
 ### Shell commands
@@ -40,6 +40,8 @@ CLEAR   clear the screen
 ECHO    print its arguments back        e.g.  ECHO hello noxis
 VERSION show the noxis version banner
 TIME    show current date and time       e.g.  2026-08-14 13:07:09
+UPTIME  show time since boot (PIT ticks)
+MEM     show kernel heap usage (allocated/free bytes)
 END     halt the CPU
 PAGE    test kmalloc() and print an address
 ```
