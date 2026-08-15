@@ -28,6 +28,7 @@ static void cmd_time(char *args);
 static void cmd_end(char *args);
 static void cmd_page(char *args);
 static void cmd_uptime(char *args);
+static void cmd_mem(char *args);
 
 static shell_command_t COMMANDS[] = {
     {"HELP",    "list available commands",          cmd_help},
@@ -38,6 +39,7 @@ static shell_command_t COMMANDS[] = {
     {"END",     "halt the CPU",                     cmd_end},
     {"PAGE",    "test kmalloc() and print an address", cmd_page},
     {"UPTIME",  "show time elapsed since boot",     cmd_uptime},
+    {"MEM",     "show heap allocation statistics",   cmd_mem},
 };
 
 #define NUM_COMMANDS (sizeof(COMMANDS) / sizeof(COMMANDS[0]))
@@ -120,6 +122,25 @@ static void cmd_uptime(char *args) {
     kprint(buf);
     kprint("s");
     kprint("\n");
+}
+
+/* Report how much of the fixed-size kernel heap has been consumed by kmalloc
+ * so far. The bump allocator (libc/mem.c) never frees, so everything between
+ * HEAP_START and the current free_mem_addr is "allocated" and the rest is free.
+ * Returns nothing; output is via kprint like the other commands. */
+static void cmd_mem(char *args) {
+    UNUSED(args);
+    uint32_t allocated = free_mem_addr - HEAP_START;
+    uint32_t free = HEAP_SIZE - allocated;
+
+    char buf[12];
+    int_to_ascii((int)allocated, buf);
+    kprint("MEM: allocated ");
+    kprint(buf);
+    kprint(" bytes, free ");
+    int_to_ascii((int)free, buf);
+    kprint(buf);
+    kprint(" bytes\n");
 }
 
 static void skip_leading_spaces(char **p) {
