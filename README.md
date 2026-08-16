@@ -31,6 +31,7 @@ for bare-metal programming on x86.
 | Heap | `22` | `kmalloc` bump allocator. |
 | **Shell** | `24` | Command table + dispatch: `HELP`, `CLEAR`, `ECHO`, `VERSION`, `TIME`, `UPTIME`, `MEM`, `END`, `PAGE`. |
 | **RTC** | `24` | CMOS real-time clock driver for the `TIME` command. |
+| **Scheduler** | `24` | Preemptive weighted round-robin scheduler (50 Hz timer) + kernel threads; kernel task is idle. |
 
 ### Shell commands
 
@@ -44,6 +45,11 @@ UPTIME  show time since boot (PIT ticks)
 MEM     show kernel heap usage (allocated/free bytes)
 END     halt the CPU
 PAGE    test kmalloc() and print an address
+TASKS   list running tasks (alias PS); shows an id, name, state, ticks and weight (W)
+PS      list running tasks
+RUN     spawn a demo task with an optional weight: RUN <name> [weight]
+KILL    ask a task to exit: KILL <id>
+YIELD   voluntarily reschedule the CPU
 ```
 
 ---
@@ -113,11 +119,46 @@ broken and rebuilt.
 
 ---
 
+## 🧵 Multitasking
+
+`noxis` now has a **preemptive, weighted round-robin scheduler** (`cpu/task.h` /
+`cpu/task.c` + the timer ISR). It runs entirely in ring 0 — tasks are "kernel
+threads", not separate user programs — but it is genuinely preemptive: the PIT
+timer fires at **50 Hz** and every tick calls `scheduler_tick()`, which saves
+the current task's CPU context (a `registers_t` frame) into its Process Control
+Block and resumes the next `READY` task. No task can hog the CPU for more than
+one 20 ms timeslice, and a task with weight `w` gets up to `w` consecutive
+slices before the scheduler rotates, so long-term CPU is divided proportionally
+to weight. The kernel/idle task (slot 0) is never weighted.
+
+Key facts for newcomers:
+
+- **Task 0 is the kernel / idle task.** It runs the interactive shell and soaks
+  up the CPU whenever nothing else is runnable.
+- **Up to `MAX_TASKS` (32) tasks**, including slot 0. Each new task gets its own
+  4 KB page-aligned kernel stack from `kmalloc`.
+- **Cooperative exit.** `task_kill()` only sets a flag; the task must poll
+  `task_should_exit()` and return on its own. There is no forced teardown.
+- **`task_yield()`** hands the CPU over voluntarily (via software interrupt
+  `0x81`), and **`task_sleep(ms)`** blocks a task for ~ms by setting a wake tick.
+
+To try it: type `TASKS` (or `PS`) to see what's running (with weights in the
+`W` column), `RUN clock` to spawn a demo task that prints the time, `RUN spin 5`
+to spawn the busy task with a high weight, and `KILL <id>` to ask a task to exit.
+If you prefer the C API, drive it through `task.h`: `task_init()`,
+`task_create_prio(name, entry, weight)`, `task_kill(id)`, `scheduler_tick(regs)`,
+`task_yield()`, `task_sleep(ms)`, `task_should_exit()`, `task_current_id()`,
+`task_count()`, and `task_get(id)`.
+
+---
+
 ## 🛠️ Ideas to extend noxis
 
 - Command history with the arrow keys (keyboard driver work)
-- A real `free()` for the heap
+- A real `free()` for the heap (the bump allocator never reclaims)
 - A simple filesystem on the floppy
 - User mode + a second privilege ring
+- User-mode tasks + privilege rings
+- Per-task CPU accounting / `TOP`-style view over `TASKS`
 
 Have fun — and remember, the only way to be sure you understood it is to break it.
