@@ -66,7 +66,7 @@ void backspace(char s[]) {
     s[len-1] = '\0';
 }
 
-/* K&R 
+/* K&R
  * Returns <0 if s1<s2, 0 if s1==s2, >0 if s1>s2 */
 int strcmp(char s1[], char s2[]) {
     int i;
@@ -74,4 +74,18 @@ int strcmp(char s1[], char s2[]) {
         if (s1[i] == '\0') return 0;
     }
     return s1[i] - s2[i];
+}
+
+/* Case-insensitive variant. The keyboard driver emits uppercase letters
+ * regardless of Shift (see sc_ascii), and the user may have Caps Lock on, so
+ * command matching must not care about case. */
+int strcasecmp(char s1[], char s2[]) {
+    int i;
+    for (i = 0; ; i++) {
+        char a = s1[i], b = s2[i];
+        if (a >= 'A' && a <= 'Z') a = (char)(a + 32);
+        if (b >= 'A' && b <= 'Z') b = (char)(b + 32);
+        if (a != b) return (unsigned char)a - (unsigned char)b;
+        if (a == '\0') return 0;
+    }
 }

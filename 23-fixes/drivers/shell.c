@@ -241,7 +241,7 @@ static void cmd_run(char *args) {
     }
 
     for (i = 0; i < DEMO_TASK_COUNT; i++) {
-        if (strcmp((char *)name, (char *)DEMO_TASKS[i].name) == 0) {
+        if (strcasecmp((char *)name, (char *)DEMO_TASKS[i].name) == 0) {
             /* If no explicit weight given, use the demo's default. */
             uint8_t w = (weight == 0) ? DEMO_TASKS[i].weight : weight;
             int id = task_create_prio(DEMO_TASKS[i].name, DEMO_TASKS[i].entry, w);
@@ -320,7 +320,7 @@ void shell_run(char *input) {
 
     int i;
     for (i = 0; i < (int)NUM_COMMANDS; i++) {
-        if (strcmp(name, (char *)COMMANDS[i].name) == 0) {
+        if (strcasecmp(name, (char *)COMMANDS[i].name) == 0) {
             COMMANDS[i].handler(args);
             return;
         }
