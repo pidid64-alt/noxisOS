@@ -9,6 +9,13 @@
 
 #define BACKSPACE 0x0E
 #define ENTER 0x1C
+/* Modifier scan codes (make codes). They carry no printable character, so they
+ * must never be appended to the input buffer. Note: their *break* codes are
+ * scancode | 0x80, which is caught by the `scancode & 0x80` check below. */
+#define LSHIFT 0x2A
+#define RSHIFT 0x36
+#define LCTRL  0x1D
+#define LALT   0x38
 
 static char key_buffer[256];
 
@@ -28,8 +35,18 @@ const char sc_ascii[] = { '?', '?', '1', '2', '3', '4', '5', '6',
 static void keyboard_callback(registers_t *regs) {
     /* The PIC leaves us the scancode in port 0x60 */
     uint8_t scancode = port_byte_in(0x60);
-    
-    if (scancode > SC_MAX) return;
+
+    /* Ignore key-release (break code) events: the high bit is set when the key
+     * goes up. Without this we would echo the character twice and, worse, the
+     * break code of a modifier would otherwise still pass the checks below. */
+    if (scancode & 0x80) return;
+
+    /* Modifier keys (Shift/Ctrl/Alt) have no printable form. Drop them so they
+     * never end up in the input buffer (a stray '?' before the command name is
+     * what used to make "HELP" look like "?HELP" -> "Unknown command"). */
+    if (scancode == LSHIFT || scancode == RSHIFT ||
+        scancode == LCTRL  || scancode == LALT) return;
+
     if (scancode == BACKSPACE) {
         backspace(key_buffer);
         kprint_backspace();
@@ -37,7 +54,7 @@ static void keyboard_callback(registers_t *regs) {
         kprint("\n");
         user_input(key_buffer); /* kernel-controlled function */
         key_buffer[0] = '\0';
-    } else {
+    } else if (scancode < SC_MAX) {
         char letter = sc_ascii[(int)scancode];
         /* Remember that kprint only accepts char[] */
         char str[2] = {letter, '\0'};
