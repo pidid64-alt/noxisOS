@@ -3,6 +3,8 @@
 #include "rtc.h"
 #include "../cpu/timer.h"
 #include "../cpu/isr.h"
+#include "../cpu/task.h"
+#include "tasks_demo.h"
 #include "../libc/string.h"
 #include "../libc/mem.h"
 #include "../libc/function.h"
@@ -29,6 +31,11 @@ static void cmd_end(char *args);
 static void cmd_page(char *args);
 static void cmd_uptime(char *args);
 static void cmd_mem(char *args);
+static void cmd_tasks(char *args);
+static void cmd_ps(char *args);
+static void cmd_run(char *args);
+static void cmd_kill(char *args);
+static void cmd_yield(char *args);
 
 static shell_command_t COMMANDS[] = {
     {"HELP",    "list available commands",          cmd_help},
@@ -40,6 +47,11 @@ static shell_command_t COMMANDS[] = {
     {"PAGE",    "test kmalloc() and print an address", cmd_page},
     {"UPTIME",  "show time elapsed since boot",     cmd_uptime},
     {"MEM",     "show heap allocation statistics",   cmd_mem},
+    {"TASKS",   "list running tasks (alias PS)",    cmd_tasks},
+    {"PS",      "list running tasks",               cmd_ps},
+    {"RUN",     "spawn a demo task: RUN <name> [weight]", cmd_run},
+    {"KILL",    "ask a task to exit: KILL <id>",    cmd_kill},
+    {"YIELD",   "voluntarily reschedule the CPU",   cmd_yield},
 };
 
 #define NUM_COMMANDS (sizeof(COMMANDS) / sizeof(COMMANDS[0]))
@@ -145,6 +157,146 @@ static void cmd_mem(char *args) {
 
 static void skip_leading_spaces(char **p) {
     while (**p == ' ' || **p == '\t') (*p)++;
+}
+
+/* Human-readable name for a task_state_t value. */
+static const char *state_name(task_state_t s) {
+    switch (s) {
+        case TASK_DEAD:     return "DEAD";
+        case TASK_READY:    return "READY";
+        case TASK_RUNNING:  return "RUN";
+        case TASK_SLEEPING: return "SLEEP";
+        default:            return "?";
+    }
+}
+
+/* Shared body for TASKS / PS: dump the task table with id, name, state, ticks, weight. */
+static void print_tasks(char *args) {
+    UNUSED(args);
+    kprint("ID  NAME            STATE   TICKS  W\n");
+    int i;
+    for (i = 0; i < MAX_TASKS; i++) {
+        task_t *t = task_get(i);
+        if (t == 0 || t->state == TASK_DEAD) continue;
+        char idbuf[8], tbuf[8], wbuf[8];
+        int_to_ascii(t->id, idbuf);
+        int_to_ascii((int)t->ticks, tbuf);
+        int_to_ascii((int)t->weight, wbuf);
+        kprint(idbuf);
+        kprint("   ");
+        kprint(t->name);
+        /* pad name to 16 chars */
+        int nlen = (int)strlen(t->name);
+        for (; nlen < 15; nlen++) kprint(" ");
+        kprint((char *)state_name(t->state));
+        kprint("   ");
+        kprint(tbuf);
+        kprint("    ");
+        kprint(wbuf);
+        kprint("\n");
+    }
+    char cbuf[8];
+    int_to_ascii(task_count(), cbuf);
+    kprint("tasks: ");
+    kprint(cbuf);
+    kprint("\n");
+}
+
+static void cmd_tasks(char *args) { print_tasks(args); }
+static void cmd_ps(char *args)    { print_tasks(args); }
+
+/* RUN <name> [weight]: spawn a demo task, optionally with a weight. */
+static void cmd_run(char *args) {
+    if (args == 0 || args[0] == '\0') {
+        kprint("usage: RUN <name> [weight]  (try: ");
+        int i;
+        for (i = 0; i < DEMO_TASK_COUNT; i++) {
+            kprint((char *)DEMO_TASKS[i].name);
+            if (i + 1 < DEMO_TASK_COUNT) kprint(" ");
+        }
+        kprint(")\n");
+        return;
+    }
+
+    /* Split name and optional weight at the first space. */
+    char *name = args;
+    char *wptr = 0;
+    int i = 0;
+    for (; args[i] != '\0'; i++) {
+        if (args[i] == ' ' || args[i] == '\t') {
+            args[i] = '\0';
+            wptr = args + i + 1;
+            while (*wptr == ' ' || *wptr == '\t') wptr++;
+            break;
+        }
+    }
+
+    uint8_t weight = 0;
+    if (wptr != 0 && wptr[0] != '\0') {
+        int v = 0, j = 0;
+        for (; wptr[j] >= '0' && wptr[j] <= '9'; j++) v = v * 10 + (wptr[j] - '0');
+        if (v > 255) v = 255;
+        if (v < 1)   v = 1;
+        weight = (uint8_t)v;
+    }
+
+    for (i = 0; i < DEMO_TASK_COUNT; i++) {
+        if (strcmp((char *)name, (char *)DEMO_TASKS[i].name) == 0) {
+            /* If no explicit weight given, use the demo's default. */
+            uint8_t w = (weight == 0) ? DEMO_TASKS[i].weight : weight;
+            int id = task_create_prio(DEMO_TASKS[i].name, DEMO_TASKS[i].entry, w);
+            if (id < 0) {
+                kprint("failed: task table full\n");
+            } else {
+                char ibuf[8], wbuf[8];
+                int_to_ascii(id, ibuf);
+                int_to_ascii((int)w, wbuf);
+                kprint("spawned ");
+                kprint((char *)DEMO_TASKS[i].name);
+                kprint(" as task ");
+                kprint(ibuf);
+                kprint(" (weight ");
+                kprint(wbuf);
+                kprint(")\n");
+            }
+            return;
+        }
+    }
+    kprint("unknown task: ");
+    kprint(name);
+    kprint("\n");
+}
+
+/* KILL <id>: cooperatively ask a task to exit. */
+static void cmd_kill(char *args) {
+    if (args == 0 || args[0] == '\0') {
+        kprint("usage: KILL <id>\n");
+        return;
+    }
+    int id = 0, sign = 1, i = 0;
+    if (args[0] == '-') { sign = -1; i = 1; }
+    for (; args[i] != '\0'; i++) id = id * 10 + (args[i] - '0');
+    id *= sign;
+    if (task_kill(id) != 0) {
+        char ibuf[8];
+        int_to_ascii(id, ibuf);
+        kprint("cannot kill task ");
+        kprint(ibuf);
+        kprint(" (bad id or kernel task)\n");
+    } else {
+        char ibuf[8];
+        int_to_ascii(id, ibuf);
+        kprint("signalled task ");
+        kprint(ibuf);
+        kprint(" to exit\n");
+    }
+}
+
+/* YIELD: let the scheduler pick the next runnable task right now. */
+static void cmd_yield(char *args) {
+    UNUSED(args);
+    task_yield();
+    kprint("yielded\n");
 }
 
 void shell_run(char *input) {
