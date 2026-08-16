@@ -18,9 +18,6 @@ void kernel_main() {
     g_kernel.sched   = SCHED_WEIGHTED;
     g_kernel.tasks   = 0; /* reserved; see scheduler registry if added later */
 
-    asm("int $2");
-    asm("int $3");
-
     kprint("Welcome to noxis\n"
         "Type HELP for a list of commands\n> ");
 }
