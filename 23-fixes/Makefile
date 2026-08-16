@@ -48,6 +48,15 @@ debug: os-image.bin kernel.elf
 %.o: %.asm
 	nasm $< -f elf32 -o $@
 
+# The boot sector must be rebuilt after the kernel is linked, because it bakes
+# in how many 512-byte sectors to read off the disk. We compute
+# ceil(kernel.bin / 512) so the loader always reads the whole kernel, no matter
+# how large it grows (a hardcoded count silently truncates the kernel).
+boot/bootsect.bin: boot/bootsect.asm kernel.bin
+	@SECTS=`python3 -c "import os;print((os.path.getsize('kernel.bin')+511)//512)" 2>/dev/null || echo 31`; \
+	echo "bootsect: reading $$SECTS sectors of kernel"; \
+	nasm -DKERNEL_SECTORS=$$SECTS $< -f bin -o $@
+
 %.bin: %.asm
 	nasm $< -f bin -o $@
 

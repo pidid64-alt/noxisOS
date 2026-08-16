@@ -2,6 +2,14 @@
 [org 0x7c00]
 KERNEL_OFFSET equ 0x1000 ; The same one we used when linking the kernel
 
+; How many 512-byte sectors of the kernel to load off the disk. Defaults to 31
+; but the real value is computed from kernel.bin's size and passed in via
+; `nasm -DKERNEL_SECTORS=...` by the Makefile, so the loader always reads the
+; whole kernel no matter how big it grows.
+%ifndef KERNEL_SECTORS
+%define KERNEL_SECTORS 31
+%endif
+
     mov [BOOT_DRIVE], dl ; Remember that the BIOS sets us the boot drive in 'dl' on boot
     mov bp, 0x9000
     mov sp, bp
@@ -28,7 +36,7 @@ load_kernel:
     call print_nl
 
     mov bx, KERNEL_OFFSET ; Read from disk and store in 0x1000
-    mov dh, 31 ; Our future kernel will be larger, make this big
+    mov dh, KERNEL_SECTORS ; number of sectors to read (computed by Makefile)
     mov dl, [BOOT_DRIVE]
     call disk_load
     ret
