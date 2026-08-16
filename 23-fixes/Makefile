@@ -13,7 +13,11 @@ GDB = gdb
 # -fno-pie: отключаем Position Independent Executable (по умолчанию на многих
 #           дистрибутивах), иначе линковка по фиксированному адресу 0x1000 не сработает
 # -fno-stack-protector: убираем canary-код, которому неоткуда взять __stack_chk_fail на голом железе
-CFLAGS = -g -ffreestanding -Wall -Wextra -fno-exceptions -fno-pie -fno-stack-protector -fcommon -m32
+# -mno-sse/-mno-sse2/-mno-mmx/-mno-avx: хостовый gcc (Arch) для -m32 по умолчанию
+#   разрешает SSE2, и генерирует movdqu/movups для копирования структур (напр.
+#   registers_t в scheduler_tick). Ядро не включает FPU/SSE (CR0/CR4 не трогаются),
+#   поэтому любая SSE-инструкция даёт #UD (int 6). Запрещаем их на уровне кода.
+CFLAGS = -g -ffreestanding -Wall -Wextra -fno-exceptions -fno-pie -fno-stack-protector -fcommon -m32 -mno-sse -mno-sse2 -mno-mmx -mno-avx -mno-avx512f
 
 # First rule is run by default
 os-image.bin: boot/bootsect.bin kernel.bin
