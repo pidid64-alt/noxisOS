@@ -4,15 +4,21 @@ monitor, print it. Used to confirm the prebuilt image boots and to give a
 behavioural baseline before/after build fixes."""
 import os, re, socket, subprocess, sys, time
 
-IMG = sys.argv[1] if len(sys.argv) > 1 else "osfs11.img"
-HD = sys.argv[2] if len(sys.argv) > 2 else None
+MODE = sys.argv[1] if len(sys.argv) > 1 else "floppy"   # floppy | cdrom
+IMG = sys.argv[2] if len(sys.argv) > 2 else "osfs11.iso"
+HD = sys.argv[3] if len(sys.argv) > 3 else None
 MON = "/tmp/osfs11-qmon"
 if os.path.exists(MON):
     os.unlink(MON)
 
-cmd = ["qemu-system-i386", "-m", "32", "-fda", IMG,
-       "-display", "none", "-no-reboot", "-no-shutdown",
-       "-monitor", f"unix:{MON},server,nowait"]
+if MODE == "cdrom":
+    cmd = ["qemu-system-i386", "-m", "32", "-cdrom", IMG, "-boot", "d",
+           "-display", "none", "-no-reboot", "-no-shutdown",
+           "-monitor", f"unix:{MON},server,nowait"]
+else:
+    cmd = ["qemu-system-i386", "-m", "32", "-fda", IMG,
+           "-display", "none", "-no-reboot", "-no-shutdown",
+           "-monitor", f"unix:{MON},server,nowait"]
 if HD:
     cmd += ["-drive", f"if=ide,format=raw,file={HD},index=0,media=disk"]
 

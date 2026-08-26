@@ -51,7 +51,7 @@ LOBJS		=  lib/syscall.o\
 DASMOUTPUT	= kernel.bin.asm
 
 # All Phony Targets
-.PHONY : everything final image clean realclean disasm all buildimg
+.PHONY : everything final image clean realclean disasm all buildimg iso isofd
 
 # Default starting position
 nop :
@@ -82,6 +82,21 @@ buildimg :
 	sudo cp -fv boot/loader.bin /mnt/floppy/
 	sudo cp -fv kernel.bin /mnt/floppy
 	sudo umount /mnt/floppy
+
+# --- ISO (El Torito floppy-emulation) ---------------------------------------
+# Boot via:  qemu-system-i386 -cdrom osfs11.iso -boot d
+# IMPORTANT: do NOT pass -no-emul-boot here. boot.asm reads the disk with
+# int 0x13 DL=0 (real floppy), so SeaBIOS must emulate a 1.44MB floppy from
+# the image inside the ISO; -no-emul-boot makes it load the 2048-byte CD
+# sector instead and the loader never finds LOADER.BIN.
+ISO_DIR   = isocontent
+ISO_IMG   = osfs11.iso
+
+iso isofd : everything $(FD)
+	@mkdir -p $(ISO_DIR)
+	cp -f $(FD) $(ISO_DIR)/a.img
+	genisoimage -quiet -V osfs11 -o $(ISO_IMG) -b a.img -hide-rr-moved $(ISO_DIR)
+	@echo "built $(ISO_IMG) (boot with: qemu-system-i386 -cdrom $(ISO_IMG) -boot d)"
 
 boot/boot.bin : boot/boot.asm boot/include/load.inc boot/include/fat12hdr.inc
 	$(ASM) $(ASMBFLAGS) -o $@ $<
