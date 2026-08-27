@@ -53,6 +53,8 @@ extern void irq12();
 extern void irq13();
 extern void irq14();
 extern void irq15();
+/* 0x81: voluntary-schedule software interrupt (task_yield) */
+extern void isr81();
 
 #define IRQ0 32
 #define IRQ1 33

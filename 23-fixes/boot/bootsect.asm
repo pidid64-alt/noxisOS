@@ -1,6 +1,6 @@
 ; Identical to lesson 13's boot sector, but the %included files have new paths
 [org 0x7c00]
-KERNEL_OFFSET equ 0x1000 ; The same one we used when linking the kernel
+KERNEL_OFFSET equ 0x10000 ; low staging buffer; relocated to 1MB in PM
 
 ; How many 512-byte sectors of the kernel to load off the disk. Defaults to 31
 ; but the real value is computed from kernel.bin's size and passed in via
@@ -28,6 +28,7 @@ KERNEL_OFFSET equ 0x1000 ; The same one we used when linking the kernel
 %include "boot/gdt.asm"
 %include "boot/32bit_print.asm"
 %include "boot/switch_pm.asm"
+%include "boot/pm_relocate.asm"
 
 [bits 16]
 load_kernel:
@@ -35,7 +36,11 @@ load_kernel:
     call print
     call print_nl
 
-    mov bx, KERNEL_OFFSET ; Read from disk and store in 0x1000
+    ; Stage the kernel at linear 0x10000. That is above 64KiB, so BX alone
+    ; cannot hold it — disk_load reads through ES:BX, so set ES:BX = 0x1000:0.
+    mov ax, KERNEL_OFFSET >> 4
+    mov es, ax
+    xor bx, bx
     mov dh, KERNEL_SECTORS ; number of sectors to read (computed by Makefile)
     mov dl, [BOOT_DRIVE]
     call disk_load
@@ -45,15 +50,14 @@ load_kernel:
 BEGIN_PM:
     mov ebx, MSG_PROT_MODE
     call print_string_pm
-    call KERNEL_OFFSET ; Give control to the kernel
-    jmp $ ; Stay here when the kernel returns control to us (if ever)
+    call pm_relocate_and_jump  ; copy 0x10000 -> 0x100000, jmp _start
+    jmp $
 
 
 BOOT_DRIVE db 0 ; It is a good idea to store it in memory because 'dl' may get overwritten
 MSG_REAL_MODE db "Started in 16-bit Real Mode", 0
 MSG_PROT_MODE db "Landed in 32-bit Protected Mode", 0
 MSG_LOAD_KERNEL db "Loading kernel into memory", 0
-MSG_RETURNED_KERNEL db "Returned from kernel. Error?", 0
 
 ; padding
 times 510 - ($-$$) db 0

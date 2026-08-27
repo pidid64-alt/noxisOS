@@ -74,6 +74,9 @@ void isr_install() {
     set_idt_gate(46, (uint32_t)irq14);
     set_idt_gate(47, (uint32_t)irq15);
 
+    /* 0x81: voluntary reschedule point used by task_yield(). */
+    set_idt_gate(0x81, (uint32_t)isr81);
+
     set_idt(); // Load with ASM
 }
 
@@ -131,10 +134,14 @@ void register_interrupt_handler(uint8_t n, isr_t handler) {
 }
 
 void irq_handler(registers_t *r) {
-    /* After every interrupt we need to send an EOI to the PICs
-     * or they will not send another interrupt again */
-    if (r->int_no >= 40) port_byte_out(0xA0, 0x20); /* slave */
-    port_byte_out(0x20, 0x20); /* master */
+    /* After every *real* IRQ we need to send an EOI to the PICs or they will
+     * not send another interrupt again. Software interrupts (e.g. the 0x81
+     * voluntary-schedule used by task_yield) are not PIC-sourced, so they must
+     * NOT send an EOI or they'd wrongly clear a pending slave-PIC IRQ. */
+    if (r->int_no >= 32 && r->int_no <= 47) {
+        if (r->int_no >= 40) port_byte_out(0xA0, 0x20); /* slave */
+        port_byte_out(0x20, 0x20); /* master */
+    }
 
     /* Handle the interrupt in a more modular way */
     if (interrupt_handlers[r->int_no] != 0) {

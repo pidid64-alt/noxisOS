@@ -1,4 +1,5 @@
 #include "screen.h"
+#include "fb.h"
 #include "../cpu/ports.h"
 #include "../libc/mem.h"
 #include <stdint.h>
@@ -20,6 +21,16 @@ int get_offset_col(int offset);
  * If col, row, are negative, we will use the current offset
  */
 void kprint_at(char *message, int col, int row) {
+    /* Framebuffer console (UEFI GOP/VBE): no CRTC cursor to query, the fb
+     * driver tracks its own cell position. */
+    if (fb_active()) {
+        if (col >= 0 && row >= 0)
+            fb_cursor_at(col, row);
+        while (*message)
+            fb_putchar(*message++);
+        return;
+    }
+
     /* Set cursor if col/row are negative */
     int offset;
     if (col >= 0 && row >= 0)
@@ -45,6 +56,10 @@ void kprint(char *message) {
 }
 
 void kprint_backspace() {
+    if (fb_active()) {
+        fb_backspace();
+        return;
+    }
     int offset = get_cursor_offset()-2;
     int row = get_offset_row(offset);
     int col = get_offset_col(offset);
@@ -133,6 +148,10 @@ void set_cursor_offset(int offset) {
 }
 
 void clear_screen() {
+    if (fb_active()) {
+        fb_clear();
+        return;
+    }
     int screen_size = MAX_COLS * MAX_ROWS;
     int i;
     uint8_t *screen = (uint8_t*) VIDEO_ADDRESS;

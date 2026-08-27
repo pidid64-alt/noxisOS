@@ -5,6 +5,7 @@ Boots 23-fixes/os-image.bin in QEMU without a display, drives the shell
 through the QEMU monitor (`sendkey`), and asserts on the VGA text buffer
 read via `xp /2000xb 0xb8000`.
 """
+import os
 import re
 import socket
 import subprocess
@@ -23,20 +24,26 @@ class Noxis:
              "-display", "none", "-no-reboot", "-no-shutdown",
              "-monitor", f"unix:{MON},server,nowait"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        deadline = time.time() + 5
-        while True:
-            try:
-                self.s = socket.socket(socket.AF_UNIX)
-                self.s.connect(MON)
-                break
-            except (FileNotFoundError, ConnectionRefusedError):
-                if time.time() > deadline:
-                    raise RuntimeError("qemu monitor socket never appeared")
-                time.sleep(0.1)
-        self.s.settimeout(0.05)
-        self.drain()
-        if not self.expect("Welcome to noxis", 15):
-            raise RuntimeError("kernel banner never appeared")
+        self.s = None
+        try:
+            deadline = time.time() + 5
+            while True:
+                try:
+                    self.s = socket.socket(socket.AF_UNIX)
+                    self.s.connect(MON)
+                    break
+                except (FileNotFoundError, ConnectionRefusedError):
+                    if time.time() > deadline:
+                        raise RuntimeError("qemu monitor socket never appeared")
+                    time.sleep(0.1)
+            self.s.settimeout(0.05)
+            self.drain()
+            if not self.expect("Welcome to noxis", 15):
+                raise RuntimeError("kernel banner never appeared")
+        except BaseException:
+            # Never orphan the QEMU process: tear down exactly like close().
+            self.close()
+            raise
 
     def drain(self):
         try:
@@ -98,18 +105,34 @@ class Noxis:
     def read_task_ticks(self, name):
         """Parse the TASKS table: find the row for `name`, return its ticks."""
         for row in self.screen():
-            m = re.match(r"^(\d+)\s+%s\s+\S+\s+(\d+)\s" % re.escape(name), row)
+            m = re.match(r"^(\d+)\s+%s\s+\S+\s+(\d+)\b" % re.escape(name), row)
             if m:
                 return int(m.group(2))
         return None
 
     def close(self):
-        try:
-            self.cmd("quit")
-        except Exception:
-            pass
-        self.s.close()
-        self.qemu.wait(timeout=5)
+        """Idempotent teardown: polite quit via monitor, then hard kill."""
+        s = getattr(self, "s", None)
+        if s is not None:
+            try:
+                self.cmd("quit")
+            except Exception:
+                pass
+            try:
+                s.close()
+            except Exception:
+                pass
+            self.s = None
+        qemu = getattr(self, "qemu", None)
+        if qemu is not None:
+            try:
+                qemu.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                qemu.kill()
+                try:
+                    qemu.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
 
 
 def t1_regress_interactive():
@@ -200,24 +223,116 @@ def t6_yield_alive():
         v.close()
 
 
+ISO = "23-fixes/noxis.iso"
+
+
+def t7_grub_iso_boots():
+    """GRUB/El Torito path (plan 2026-08-23 Task 3): GRUB must load the
+    kernel with an intact Multiboot handoff — EAX=0x2BADB002 must SURVIVE
+    _start's segment reloads (writing AX keeps EAX's upper half, so the
+    magic used to arrive as 0x2BAD0010 and fb_init fell back to the hidden
+    VGA-text console on a black screen). Asserts on the debugcon trace,
+    a screendump (framebuffer banner is NOT in 0xb8000), and a clean
+    -d int exception log."""
+    dbg_log = "/tmp/noxis-t7-debugcon.log"
+    int_log = "/tmp/noxis-t7-int.log"
+    shot = "/tmp/noxis-t7-screen.ppm"
+    mon = "/tmp/noxis-t7-qmon"
+    for f in (dbg_log, int_log, shot):
+        if os.path.exists(f):
+            os.unlink(f)
+
+    qemu = subprocess.Popen(
+        ["qemu-system-i386", "-m", "32",
+         "-cdrom", ISO, "-boot", "d",
+         "-display", "none", "-no-reboot", "-no-shutdown",
+         "-debugcon", f"file:{dbg_log}",
+         "-d", "int", "-D", int_log,
+         "-monitor", f"unix:{mon},server,nowait"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    s = None
+    try:
+        deadline = time.time() + 5
+        while True:
+            try:
+                s = socket.socket(socket.AF_UNIX)
+                s.connect(mon)
+                break
+            except (FileNotFoundError, ConnectionRefusedError):
+                if time.time() > deadline:
+                    raise RuntimeError("qemu monitor socket never appeared")
+                time.sleep(0.1)
+        time.sleep(8)  # GRUB (timeout=0) + kernel init
+        s.sendall(f"screendump {shot}\n".encode())
+        time.sleep(1)
+
+        dbg = open(dbg_log, errors="replace").read()
+        assert "FB: enter magic=0x2badb002" in dbg, \
+            f"kernel saw wrong/absent Multiboot magic: {dbg!r}"
+        assert "FB: ACTIVE" in dbg, "framebuffer never activated"
+
+        # Screendump must not be an all-black frame: the banner has to be
+        # visibly painted in the framebuffer.
+        with open(shot, "rb") as f:
+            data = f.read().split(b"\n", 3)
+        w, h = map(int, data[1].split())
+        pix = data[3]
+        bright = sum(1 for i in range(0, len(pix), 3)
+                     if pix[i] + pix[i + 1] + pix[i + 2] > 150)
+        assert bright > 200, f"screen looks black ({bright} bright px of {w}x{h})"
+
+        ints = open(int_log, errors="replace").read()
+        assert not re.search(r"new 0x[0-9a-f]+", ints), "CPU exceptions during ISO boot"
+        return True, ""
+    finally:
+        if s is not None:
+            try:
+                s.sendall(b"quit\n")
+                s.close()
+            except Exception:
+                pass
+        try:
+            qemu.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            qemu.kill()
+            qemu.wait(timeout=5)
+
+
 TESTS = [t1_regress_interactive, t2_run_blink_shell_alive,
          t3_parallel_tasks, t4_cooperative_kill,
-         t5_weights_3to1, t6_yield_alive]
+         t5_weights_3to1, t6_yield_alive, t7_grub_iso_boots]
 
 if __name__ == "__main__":
     wanted = sys.argv[1:]
+    selected = [t for t in TESTS
+                if not wanted or t.__name__ in wanted
+                or t.__name__.lstrip("_") in wanted]
+    if wanted and not selected:
+        valid = ", ".join(t.__name__.lstrip("_") for t in TESTS)
+        print(f"error: no test matches {wanted}; valid names: {valid}",
+              file=sys.stderr)
+        sys.exit(2)
+
+    ran = 0
     failed = []
-    for t in TESTS:
-        if wanted and t.__name__ not in wanted and t.__name__[2:] not in wanted:
-            continue
-        try:
-            ok, msg = t()
-            status = "PASS" if ok else f"FAIL {msg}"
-        except Exception as e:
-            status = f"FAIL {type(e).__name__}: {e}"
-            ok = False
-        print(f"[{status}] {t.__name__}")
-        if not ok:
-            failed.append(t.__name__)
-    print(f"\n{len(TESTS)-len(failed)}/{len(TESTS)} passed")
-    sys.exit(1 if failed else 0)
+    interrupted = False
+    try:
+        for t in selected:
+            try:
+                ok, msg = t()
+                status = "PASS" if ok else f"FAIL {msg}"
+            except Exception as e:
+                status = f"FAIL {type(e).__name__}: {e}"
+                ok = False
+            ran += 1
+            print(f"[{status}] {t.__name__}")
+            if not ok:
+                failed.append(t.__name__)
+    except KeyboardInterrupt:
+        interrupted = True
+    finally:
+        print(f"\n{ran - len(failed)}/{len(selected)} passed")
+        if interrupted:
+            print("INTERRUPTED: remaining tests skipped", file=sys.stderr)
+        # Interrupt counts as failure even if every finished test passed.
+        sys.exit(130 if interrupted else (1 if failed else 0))

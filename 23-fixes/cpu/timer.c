@@ -1,13 +1,16 @@
 #include "timer.h"
 #include "isr.h"
 #include "ports.h"
+#include "task.h"
 #include "../libc/function.h"
 
 uint32_t tick = 0;
 
 static void timer_callback(registers_t *regs) {
     tick++;
-    UNUSED(regs);
+    /* Preempt the running task on every tick: hand the CPU to the round-robin
+     * scheduler, which mutates *regs so the ISR stub resumes the next task. */
+    scheduler_tick(regs);
 }
 
 void init_timer(uint32_t freq) {

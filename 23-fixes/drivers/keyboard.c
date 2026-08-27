@@ -19,7 +19,11 @@
 
 static char key_buffer[256];
 
-#define SC_MAX 57
+/* First scancode NOT in the sc_ascii table. Spacebar is index 57 (0x39),
+ * so the bound must be 58, not 57 — otherwise the space key (used in every
+ * multi-word command like "echo hi noxis") is silently dropped and the
+ * shell sees a concatenated token it cannot match. */
+#define SC_MAX 58
 const char *sc_name[] = { "ERROR", "Esc", "1", "2", "3", "4", "5", "6", 
     "7", "8", "9", "0", "-", "=", "Backspace", "Tab", "Q", "W", "E", 
         "R", "T", "Y", "U", "I", "O", "P", "[", "]", "Enter", "Lctrl", 

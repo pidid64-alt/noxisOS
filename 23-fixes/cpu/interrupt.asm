@@ -93,6 +93,8 @@ global isr28
 global isr29
 global isr30
 global isr31
+; 0x81: voluntary-schedule software interrupt (task_yield)
+global isr81
 ; IRQs
 global irq0
 global irq1
@@ -296,6 +298,13 @@ isr31:
     push byte 0
     push byte 31
     jmp isr_common_stub
+
+; 0x81: voluntary-schedule software interrupt. Behaves exactly like an IRQ
+; (goes through irq_handler so the scheduler can run), so we route it there.
+isr81:
+	push byte 0
+	push dword 0x81
+	jmp irq_common_stub
 
 ; IRQ handlers
 irq0:
