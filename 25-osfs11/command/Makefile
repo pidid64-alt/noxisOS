@@ -8,8 +8,10 @@ DASM		= objdump
 CC		= gcc
 LD		= ld
 ASMFLAGS	= -I ../include/ -f elf
-CFLAGS		= -I ../include/ -c -fno-builtin -fno-stack-protector -Wall
-LDFLAGS		= -Ttext 0x1000
+# -m32: user programs are 32-bit like the kernel; the host gcc is x86_64.
+# -fno-pic/-fno-pie: static flat binaries at -Ttext 0x1000, no GOT.
+CFLAGS		= -m32 -I ../include/ -c -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-omit-frame-pointer -Wall
+LDFLAGS		= -m elf_i386 -Ttext 0x1000
 DASMFLAGS	= -D
 LIB		= ../lib/orangescrt.a
 BIN		= echo pwd

@@ -39,7 +39,12 @@ PUBLIC void task_fs()
 {
 	printl("{FS} Task FS begins.\n");
 
+	out_byte(0xE9, 'F'); out_byte(0xE9, '0'); out_byte(0xE9, '\n');
 	init_fs();
+
+	out_byte(0xE9, 'F'); out_byte(0xE9, '1'); out_byte(0xE9, '\n');
+
+	out_byte(0xE9, 'F'); out_byte(0xE9, '2'); out_byte(0xE9, '\n');
 
 	while (1) {
 		send_recv(RECEIVE, ANY, &fs_msg);

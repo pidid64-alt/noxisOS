@@ -469,13 +469,21 @@ PRIVATE int msg_receive(struct proc* current, int src, MESSAGE* m)
 		else
 			p_who_wanna_recv->p_recvfrom = proc2pid(p_from);
 
-		block(p_who_wanna_recv);
-
+		/* These invariants hold only BEFORE we yield. After block() the
+		 * proc may already have been unblocked -- by msg_send() (which
+		 * clears p_msg/p_recvfrom) or by inform_int() on a hardware IRQ
+		 * (which resets p_recvfrom to NO_TASK). The original code placed
+		 * these asserts AFTER block(), so under QEMU's different IRQ
+		 * timing (interrupt delivered after blocking) they tripped on a
+		 * perfectly valid post-unblock state. Moved here, before block().
+		 */
 		assert(p_who_wanna_recv->p_flags == RECEIVING);
 		assert(p_who_wanna_recv->p_msg != 0);
 		assert(p_who_wanna_recv->p_recvfrom != NO_TASK);
 		assert(p_who_wanna_recv->p_sendto == NO_TASK);
 		assert(p_who_wanna_recv->has_int_msg == 0);
+
+		block(p_who_wanna_recv);
 	}
 
 	return 0;

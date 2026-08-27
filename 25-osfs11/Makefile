@@ -51,7 +51,7 @@ LOBJS		=  lib/syscall.o\
 DASMOUTPUT	= kernel.bin.asm
 
 # All Phony Targets
-.PHONY : everything final image clean realclean disasm all buildimg iso isofd
+.PHONY : everything final image clean realclean disasm all buildimg iso isofd install-cmdtar
 
 # Default starting position
 nop :
@@ -97,6 +97,12 @@ iso isofd : everything $(FD)
 	cp -f $(FD) $(ISO_DIR)/a.img
 	genisoimage -quiet -V osfs11 -o $(ISO_IMG) -b a.img -hide-rr-moved $(ISO_DIR)
 	@echo "built $(ISO_IMG) (boot with: qemu-system-i386 -cdrom $(ISO_IMG) -boot d)"
+
+# Rebuild user commands, pack kernel.bin + echo + pwd + hdldr.bin into a tar
+# and install it at (ROOT_BASE + INSTALL_START_SECT) in $(HD). The kernel's
+# untar() extracts it on next boot; see command/Makefile for the offsets.
+install-cmdtar : everything
+	$(MAKE) -C command install
 
 boot/boot.bin : boot/boot.asm boot/include/load.inc boot/include/fat12hdr.inc
 	$(ASM) $(ASMBFLAGS) -o $@ $<
