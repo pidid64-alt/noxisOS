@@ -14,7 +14,7 @@ CFLAGS		= -m32 -I ../include/ -c -fno-builtin -fno-stack-protector -fno-pic -fno
 LDFLAGS		= -m elf_i386 -Ttext 0x1000
 DASMFLAGS	= -D
 LIB		= ../lib/orangescrt.a
-BIN		= echo pwd demo
+BIN		= echo pwd demo desktop
 
 # All Phony Targets
 .PHONY : everything final clean realclean disasm all install
