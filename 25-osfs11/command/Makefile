@@ -14,7 +14,7 @@ CFLAGS		= -m32 -I ../include/ -c -fno-builtin -fno-stack-protector -fno-pic -fno
 LDFLAGS		= -m elf_i386 -Ttext 0x1000
 DASMFLAGS	= -D
 LIB		= ../lib/orangescrt.a
-BIN		= echo pwd
+BIN		= echo pwd demo
 
 # All Phony Targets
 .PHONY : everything final clean realclean disasm all install
@@ -54,4 +54,10 @@ pwd.o: pwd.c ../include/type.h ../include/stdio.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 pwd : pwd.o start.o $(LIB)
+	$(LD) $(LDFLAGS) -o $@ $?
+
+demo.o: demo.c ../include/type.h ../include/stdio.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+demo : demo.o start.o $(LIB)
 	$(LD) $(LDFLAGS) -o $@ $?

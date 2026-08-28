@@ -88,6 +88,29 @@
 #define	V_MEM_BASE	0xB8000	/* base of color video memory */
 #define	V_MEM_SIZE	0x8000	/* 32K: B8000H -> BFFFFH */
 
+/* VGA (mode 13h / framebuffer) -- ports used to program the VGA without BIOS */
+#define	VGA_MISC_W	0x3C2	/* Misc Output Register (write) */
+#define	VGA_MISC_R	0x3CC	/* Misc Output Register (read) */
+#define	VGA_SEQ_ADDR	0x3C4	/* Sequencer Address Register */
+#define	VGA_SEQ_DATA	0x3C5	/* Sequencer Data Register */
+#define	VGA_DAC_MASK	0x3C6	/* DAC Mask Register */
+#define	VGA_DAC_READ	0x3C7	/* DAC Read Index Register */
+#define	VGA_DAC_WRITE	0x3C8	/* DAC Write Index Register */
+#define	VGA_DAC_DATA	0x3C9	/* DAC Data Register */
+#define	VGA_GC_ADDR	0x3CE	/* Graphics Controller Address Register */
+#define	VGA_GC_DATA	0x3CF	/* Graphics Controller Data Register */
+#define	VGA_CRTC_ADDR	0x3D4	/* CRT Controller Address Register */
+#define	VGA_CRTC_DATA	0x3D5	/* CRT Controller Data Register */
+#define	VGA_AC_ADDR	0x3C0	/* Attribute Controller Address/Data Register */
+#define	VGA_AC_RDY	0x3DA	/* Input Status #1 / AC flip-flop reset */
+
+#define	GFX_FB_BASE	0xA0000	/* linear framebuffer base (mode 13h) */
+#define	GFX_FB_SIZE	0xFA00	/* 320 * 200 = 64000 bytes (used: 64000) */
+#define	GFX_FB_W	320	/* mode 13h width  */
+#define	GFX_FB_H	200	/* mode 13h height */
+#define	GFX_FB_BYTES	(GFX_FB_W * GFX_FB_H)	/* 64000 */
+#define	GFX_PITCH	320	/* bytes per scanline in mode 13h */
+
 /* CMOS */
 #define CLK_ELE		0x70	/* CMOS RAM address register port (write only)
 				 * Bit 7 = 1  NMI disable
@@ -137,7 +160,8 @@
 #define TASK_HD		2
 #define TASK_FS		3
 #define TASK_MM		4
-#define INIT		5
+#define TASK_GFX	5
+#define INIT		6
 #define ANY		(NR_TASKS + NR_PROCS + 10)
 #define NO_TASK		(NR_TASKS + NR_PROCS + 20)
 
@@ -183,6 +207,11 @@ enum msgtype {
 
 	/* TTY, SYS, FS, MM, etc */
 	SYSCALL_RET,
+
+	/* GFX */
+	GFX_RUN,	/* a user proc asks TASK_GFX to run the demo */
+	GFX_DONE,	/* TASK_GFX finished, reply to the caller */
+	TTY_POLL_KEY,	/* TASK_GFX asks TTY for a pending ESC key */
 
 	/* message type for drivers */
 	DEV_OPEN = 1001,

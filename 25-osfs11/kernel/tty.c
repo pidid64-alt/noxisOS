@@ -114,6 +114,17 @@ PUBLIC void task_tty()
 			 */
 			key_pressed = 0;
 			continue;
+		case TTY_POLL_KEY:
+			/**
+			 * TASK_GFX polls the keyboard for ESC without owning it.
+			 * The keyboard is global (single TTY owner), so we just
+			 * forward the ESC-pending flag. msg.DEVICE is ignored.
+			 */
+			reset_msg(&msg);
+			msg.type = SYSCALL_RET;
+			msg.RETVAL = kb_poll_esc();
+			send_recv(SEND, src, &msg);
+			break;
 		default:
 			dump_msg("TTY::unknown msg", &msg);
 			break;

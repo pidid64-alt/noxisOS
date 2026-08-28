@@ -37,6 +37,11 @@ PRIVATE	int		num_lock;	/* Num Lock		*/
 PRIVATE	int		scroll_lock;	/* Scroll Lock		*/
 PRIVATE	int		column;
 
+/* Set by keyboard_handler() when an ESC (make) key is detected; consumed by
+ * kb_poll_esc() so TASK_GFX can detect "press ESC to quit" without owning the
+ * keyboard itself. */
+PRIVATE	int		esc_pending;
+
 PRIVATE u8	get_byte_from_kb_buf();
 PRIVATE void	set_leds();
 PRIVATE void	kb_wait();
@@ -54,6 +59,9 @@ PRIVATE void	kb_ack();
 PUBLIC void keyboard_handler(int irq)
 {
 	u8 scan_code = in_byte(KB_DATA);
+
+	if (scan_code == 0x01)	/* ESC make code: remember it for polling */
+		esc_pending = 1;
 
 	if (kb_in.count < KB_IN_BYTES) {
 		*(kb_in.p_head) = scan_code;
@@ -116,6 +124,8 @@ PUBLIC void init_keyboard()
 	scroll_lock	= 0;
 
 	column		= 0;
+
+	esc_pending	= 0;
 
 	set_leds();
 
@@ -434,5 +444,24 @@ PRIVATE void set_leds()
 	kb_wait();
 	out_byte(KB_DATA, leds);
 	kb_ack();
+}
+
+
+/*****************************************************************************
+ *                                kb_poll_esc
+ *****************************************************************************
+ * Non-blocking check for a pending ESC key. Returns 1 if ESC was pressed
+ * since the last call (or since boot), then clears the flag.
+ *
+ * The keyboard remains owned by TTY; this only exposes a single well-known
+ * key to TASK_GFX for "press ESC to quit the demo".
+ *
+ * @return 1 if ESC is pending, 0 otherwise.
+ *****************************************************************************/
+PUBLIC int kb_poll_esc()
+{
+	int pending = esc_pending;
+	esc_pending = 0;
+	return pending;
 }
 

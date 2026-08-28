@@ -62,6 +62,7 @@ PUBLIC void hd_handler(int irq);
 /* keyboard.c */
 PUBLIC void init_keyboard();
 PUBLIC void keyboard_read(TTY* p_tty);
+PUBLIC int  kb_poll_esc();
 
 /* tty.c */
 PUBLIC void task_tty();
@@ -70,6 +71,9 @@ PUBLIC void dump_tty_buf();	/* for debug only */
 
 /* systask.c */
 PUBLIC void task_sys();
+
+/* gfx.c */
+PUBLIC void task_gfx();
 
 /* fs/main.c */
 PUBLIC void			task_fs();

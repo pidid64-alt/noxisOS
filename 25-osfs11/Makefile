@@ -35,6 +35,7 @@ OBJS		= kernel/kernel.o kernel/start.o kernel/main.o\
 			kernel/clock.o kernel/keyboard.o kernel/tty.o kernel/console.o\
 			kernel/i8259.o kernel/global.o kernel/protect.o kernel/proc.o\
 			kernel/systask.o kernel/hd.o\
+			kernel/gfx.o\
 			kernel/kliba.o kernel/klib.o\
 			lib/syslog.o\
 			mm/main.o mm/forkexit.o mm/exec.o\
@@ -47,11 +48,12 @@ LOBJS		=  lib/syscall.o\
 			lib/open.o lib/read.o lib/write.o lib/close.o lib/unlink.o\
 			lib/lseek.o\
 			lib/getpid.o lib/stat.o\
-			lib/fork.o lib/exit.o lib/wait.o lib/exec.o
+			lib/fork.o lib/exit.o lib/wait.o lib/exec.o\
+			lib/gfx.o
 DASMOUTPUT	= kernel.bin.asm
 
 # All Phony Targets
-.PHONY : everything final image clean realclean disasm all buildimg iso isofd install-cmdtar
+.PHONY : everything final image clean realclean disasm all buildimg iso isofd install-cmdtar test
 
 # Default starting position
 nop :
@@ -64,7 +66,7 @@ all : realclean everything
 image : realclean everything clean buildimg
 
 clean :
-	rm -f $(OBJS) $(LOBJS)
+	rm -f $(OBJS) $(LOBJS) $(GFX_UNIT)
 
 realclean :
 	rm -f $(OBJS) $(LOBJS) $(LIB) $(ORANGESBOOT) $(ORANGESKERNEL)
@@ -103,6 +105,20 @@ iso isofd : everything $(FD)
 # untar() extracts it on next boot; see command/Makefile for the offsets.
 install-cmdtar : everything
 	$(MAKE) -C command install
+
+# --- host unit tests ---------------------------------------------------------
+# Compiles the REAL kernel/gfx.c + lib/gfx.c against the stub headers in
+# tests/stubs/ (do NOT add -I include here: the real headers would collide
+# with the mirrors in the test file) and runs them on the host. -m32 keeps
+# the test's integer model identical to the kernel's.
+GFX_UNIT	= tests/gfx_unit
+GFX_UNITFLAGS	= -m32 -Wall -Wextra -iquote tests/stubs
+
+test : $(GFX_UNIT)
+	./$(GFX_UNIT)
+
+$(GFX_UNIT) : tests/gfx_unit.c kernel/gfx.c lib/gfx.c tests/stubs/*.h
+	$(CC) $(GFX_UNITFLAGS) -o $@ $<
 
 boot/boot.bin : boot/boot.asm boot/include/load.inc boot/include/fat12hdr.inc
 	$(ASM) $(ASMBFLAGS) -o $@ $<
@@ -170,6 +186,9 @@ kernel/systask.o: kernel/systask.c
 kernel/hd.o: kernel/hd.c
 	$(CC) $(CFLAGS) -o $@ $<
 
+kernel/gfx.o: kernel/gfx.c
+	$(CC) $(CFLAGS) -o $@ $<
+
 kernel/klib.o: kernel/klib.c
 	$(CC) $(CFLAGS) -o $@ $<
 
@@ -216,6 +235,9 @@ lib/exec.o: lib/exec.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 lib/stat.o: lib/stat.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/gfx.o: lib/gfx.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 lib/lseek.o: lib/lseek.c

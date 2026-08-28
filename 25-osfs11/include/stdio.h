@@ -150,5 +150,8 @@ PUBLIC int	stat		(const char *path, struct stat *buf);
 /* lib/syslog.c */
 PUBLIC	int	syslog		(const char *fmt, ...);
 
+/* lib/gfx.c */
+PUBLIC	int	gfx_run		(void);
+
 
 #endif /* _ORANGES_STDIO_H_ */
