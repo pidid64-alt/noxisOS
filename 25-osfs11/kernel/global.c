@@ -27,12 +27,13 @@ PUBLIC	struct proc proc_table[NR_TASKS + NR_PROCS];
 PUBLIC	struct task	task_table[NR_TASKS] = {
 	/* entry        stack size        task name */
 	/* -----        ----------        --------- */
-	{task_tty,      STACK_SIZE_TTY,   "TTY"       },
-	{task_sys,      STACK_SIZE_SYS,   "SYS"       },
-	{task_hd,       STACK_SIZE_HD,    "HD"        },
-	{task_fs,       STACK_SIZE_FS,    "FS"        },
-	{task_mm,       STACK_SIZE_MM,    "MM"        },
-	{task_gfx,      STACK_SIZE_GFX,   "GFX"       }};
+	{task_tty,      STACK_SIZE_TTY,     "TTY"       },
+	{task_sys,      STACK_SIZE_SYS,     "SYS"       },
+	{task_hd,       STACK_SIZE_HD,      "HD"        },
+	{task_fs,       STACK_SIZE_FS,      "FS"        },
+	{task_mm,       STACK_SIZE_MM,      "MM"        },
+	{task_gfx,      STACK_SIZE_GFX,     "GFX"       },
+	{task_desktop,  STACK_SIZE_DESKTOP, "DESKTOP"   }};
 
 PUBLIC	struct task	user_proc_table[NR_NATIVE_PROCS] = {
 	/* entry    stack size     proc name */

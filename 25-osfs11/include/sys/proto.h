@@ -75,6 +75,26 @@ PUBLIC void task_sys();
 /* gfx.c */
 PUBLIC void task_gfx();
 
+/* desktop.c */
+PUBLIC void task_desktop();
+
+/* mouse.c */
+PUBLIC void mouse_init();
+PUBLIC void mouse_handler(int irq);
+PUBLIC void mouse_get_state(int *x, int *y, int *buttons);
+
+/* wm.c */
+PUBLIC void wm_init(DESKTOP *desk, u8 *fb);
+PUBLIC int wm_create_window(DESKTOP *desk, int x, int y, int w, int h, const char *title);
+PUBLIC void wm_close_window(DESKTOP *desk, int win_id);
+PUBLIC void wm_draw_desktop(DESKTOP *desk);
+PUBLIC void wm_draw_window(DESKTOP *desk, int win_id);
+PUBLIC void wm_draw_cursor(DESKTOP *desk);
+PUBLIC void wm_update_mouse(DESKTOP *desk, int dx, int dy, int buttons);
+PUBLIC void wm_handle_click(DESKTOP *desk, int x, int y);
+PUBLIC void wm_focus_window(DESKTOP *desk, int win_id);
+PUBLIC int wm_hit_test(DESKTOP *desk, int x, int y);
+
 /* fs/main.c */
 PUBLIC void			task_fs();
 PUBLIC int			rw_sector(int io_type, int dev, u64 pos,

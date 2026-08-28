@@ -125,6 +125,7 @@ PUBLIC int kernel_main()
 
 	init_clock();
         init_keyboard();
+	mouse_init();
 
 	restart();
 

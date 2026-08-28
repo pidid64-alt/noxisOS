@@ -153,5 +153,8 @@ PUBLIC	int	syslog		(const char *fmt, ...);
 /* lib/gfx.c */
 PUBLIC	int	gfx_run		(void);
 
+/* lib/desktop.c */
+PUBLIC	int	desktop_start	(void);
+
 
 #endif /* _ORANGES_STDIO_H_ */

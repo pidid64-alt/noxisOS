@@ -35,7 +35,7 @@ OBJS		= kernel/kernel.o kernel/start.o kernel/main.o\
 			kernel/clock.o kernel/keyboard.o kernel/tty.o kernel/console.o\
 			kernel/i8259.o kernel/global.o kernel/protect.o kernel/proc.o\
 			kernel/systask.o kernel/hd.o\
-			kernel/gfx.o\
+			kernel/gfx.o kernel/desktop.o kernel/wm.o kernel/mouse.o\
 			kernel/kliba.o kernel/klib.o\
 			lib/syslog.o\
 			mm/main.o mm/forkexit.o mm/exec.o\
@@ -49,7 +49,7 @@ LOBJS		=  lib/syscall.o\
 			lib/lseek.o\
 			lib/getpid.o lib/stat.o\
 			lib/fork.o lib/exit.o lib/wait.o lib/exec.o\
-			lib/gfx.o
+			lib/gfx.o lib/desktop.o
 DASMOUTPUT	= kernel.bin.asm
 
 # All Phony Targets
@@ -189,6 +189,15 @@ kernel/hd.o: kernel/hd.c
 kernel/gfx.o: kernel/gfx.c
 	$(CC) $(CFLAGS) -o $@ $<
 
+kernel/desktop.o: kernel/desktop.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+kernel/wm.o: kernel/wm.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+kernel/mouse.o: kernel/mouse.c
+	$(CC) $(CFLAGS) -o $@ $<
+
 kernel/klib.o: kernel/klib.c
 	$(CC) $(CFLAGS) -o $@ $<
 
@@ -238,6 +247,9 @@ lib/stat.o: lib/stat.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 lib/gfx.o: lib/gfx.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+lib/desktop.o: lib/desktop.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 lib/lseek.o: lib/lseek.c

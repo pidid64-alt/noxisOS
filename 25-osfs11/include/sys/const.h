@@ -161,7 +161,8 @@
 #define TASK_FS		3
 #define TASK_MM		4
 #define TASK_GFX	5
-#define INIT		6
+#define TASK_DESKTOP	6
+#define INIT		7
 #define ANY		(NR_TASKS + NR_PROCS + 10)
 #define NO_TASK		(NR_TASKS + NR_PROCS + 20)
 
@@ -212,6 +213,10 @@ enum msgtype {
 	GFX_RUN,	/* a user proc asks TASK_GFX to run the demo */
 	GFX_DONE,	/* TASK_GFX finished, reply to the caller */
 	TTY_POLL_KEY,	/* TASK_GFX asks TTY for a pending ESC key */
+
+	/* DESKTOP */
+	DESKTOP_START,	/* a user proc asks TASK_DESKTOP to start GUI */
+	DESKTOP_DONE,	/* TASK_DESKTOP finished, reply to the caller */
 
 	/* message type for drivers */
 	DEV_OPEN = 1001,
