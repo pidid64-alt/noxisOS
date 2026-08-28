@@ -83,6 +83,10 @@ PUBLIC void mouse_init();
 PUBLIC void mouse_handler(int irq);
 PUBLIC void mouse_get_state(int *x, int *y, int *buttons);
 
+/* wm.c — DESKTOP/WINDOW fully defined in wm.h; forward type for includers
+ * that use the standard header stack without wm.h */
+typedef struct s_desktop DESKTOP;
+
 /* wm.c */
 PUBLIC void wm_init(DESKTOP *desk, u8 *fb);
 PUBLIC int wm_create_window(DESKTOP *desk, int x, int y, int w, int h, const char *title);
