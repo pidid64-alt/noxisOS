@@ -94,6 +94,7 @@ PRIVATE void desktop_run(u8 *saved)
 {
 	int mx, my, buttons;
 	int last_tick = get_ticks();
+	int frame_count = 0;
 
 	/* Switch to graphics mode */
 	vga_save_state(saved);
@@ -111,6 +112,22 @@ PRIVATE void desktop_run(u8 *saved)
 
 	wm_focus_window(&desktop, 0);
 
+	/* Force initial draw */
+	wm_draw_desktop(&desktop);
+
+	/* Draw windows in z-order */
+	int z, i;
+	for (z = 1; z <= WM_MAX_WINDOWS; z++) {
+		for (i = 0; i < WM_MAX_WINDOWS; i++) {
+			if (desktop.windows[i].state == WM_WINDOW_NORMAL &&
+			    desktop.windows[i].z_order == z) {
+				wm_draw_window(&desktop, i);
+			}
+		}
+	}
+	wm_draw_cursor(&desktop);
+	desktop_present();
+
 	/* Main desktop loop */
 	while (desktop.running) {
 		/* Get mouse state */
@@ -127,11 +144,10 @@ PRIVATE void desktop_run(u8 *saved)
 		last_buttons = buttons;
 
 		/* Redraw at ~20 FPS */
-		if (get_ticks() - last_tick >= 5) {
+		if (get_ticks() - last_tick >= 2) {
 			wm_draw_desktop(&desktop);
 
 			/* Draw windows in z-order */
-			int z, i;
 			for (z = 1; z <= WM_MAX_WINDOWS; z++) {
 				for (i = 0; i < WM_MAX_WINDOWS; i++) {
 					if (desktop.windows[i].state == WM_WINDOW_NORMAL &&
@@ -145,6 +161,7 @@ PRIVATE void desktop_run(u8 *saved)
 			desktop_present();
 
 			last_tick = get_ticks();
+			frame_count++;
 		}
 
 		/* Check for ESC to exit */
