@@ -4,7 +4,7 @@
 HD		= ../100m.img
 
 ASM		= nasm
-DASM		= objdump
+DASM	= objdump
 CC		= gcc
 LD		= ld
 ASMFLAGS	= -I ../include/ -f elf
@@ -25,8 +25,8 @@ everything : $(BIN)
 install : all clean
 	cp ../boot/hdldr.bin ./ -v
 	cp ../kernel.bin ./ -v
-	tar vcf inst.tar kernel.bin $(BIN) hdldr.bin
-	dd if=inst.tar of=$(HD) seek=`echo "obase=10;ibase=16;(\`egrep -e '^ROOT_BASE' ../boot/include/load.inc | sed -e 's/.*0x//g'\`+\`egrep -e '#define[[:space:]]*INSTALL_START_SECT' ../include/sys/config.h | sed -e 's/.*0x//g'\`)*200" | bc` bs=1 count=`ls -l inst.tar | awk -F " " '{print $$5}'` conv=notrunc
+	tar vcf cmd.tar kernel.bin $(BIN) hdldr.bin
+	dd if=cmd.tar of=$(HD) seek=`echo "obase=10;ibase=16;(\`egrep -e '^ROOT_BASE' ../boot/include/load.inc | sed -e 's/.*0x//g'\`+\`egrep -e '#define[[:space:]]*INSTALL_START_SECT' ../include/sys/config.h | sed -e 's/.*0x//g'\`)*200" | bc` bs=1 count=`ls -l cmd.tar | awk -F " " '{print $$5}'` conv=notrunc
 
 all : realclean everything
 
@@ -48,16 +48,22 @@ echo.o: echo.c ../include/type.h ../include/stdio.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 echo : echo.o start.o $(LIB)
-	$(LD) $(LDFLAGS) -o $@ $?
+	$(LD) $(LDFLAGS) -o $@ $^
 
 pwd.o: pwd.c ../include/type.h ../include/stdio.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 pwd : pwd.o start.o $(LIB)
-	$(LD) $(LDFLAGS) -o $@ $?
+	$(LD) $(LDFLAGS) -o $@ $^
 
 demo.o: demo.c ../include/type.h ../include/stdio.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 demo : demo.o start.o $(LIB)
-	$(LD) $(LDFLAGS) -o $@ $?
+	$(LD) $(LDFLAGS) -o $@ $^
+
+desktop.o: desktop.c ../include/type.h ../include/stdio.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+desktop : desktop.o start.o $(LIB)
+	$(LD) $(LDFLAGS) -o $@ $^
