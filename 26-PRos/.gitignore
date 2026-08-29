@@ -1,0 +1,30 @@
+### Assembler template
+*.exe
+*.o
+*.obj
+*.bc
+
+bin/
+
+# CLion
+.idea/
+
+# MacOS Finder files.
+.DS_Store
+
+# Common build directories
+build*/
+
+# Visual Studio Code
+.vscode/
+.cache/
+.vs/
+out/
+
+# clang-tidy output
+clang-tidy-fixes.patch
+
+disk_img/
+
+# Other
+lpt/

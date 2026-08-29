@@ -1,0 +1,115 @@
+===========================================================================
+                       CONFIGURATION FILES REFERENCE
+===========================================================================
+
+All configuration files are located in CONF/ directory.
+They use .CFG extension and are loaded at system startup.
+
+[SYSTEM.CFG]
+  Purpose: System boot settings
+  Format: Key=Value pairs
+
+  Settings:
+    LOGO=<path>         - Path to boot logo BMP file
+                          Example: LOGO=BMP/LOGO.BMP
+
+    LOGO_STRETCH=<bool> - Stretch logo to fullscreen
+                          Values: TRUE or FALSE
+
+    START_SOUND=<bool>  - Play startup melody
+                          Values: TRUE or FALSE
+
+[USER.CFG]
+  Purpose: Stores username
+  Format: Plain text (encrypted)
+  Max length: 31 characters
+
+  Edit: Run SETUP.BIN to change username
+
+[PASSWORD.CFG]
+  Purpose: Stores login password
+  Format: XOR-encrypted data
+
+  Edit: Run SETUP.BIN to change password
+  WARNING: Manual editing will corrupt password!
+
+[PROMPT.CFG]
+  Purpose: Define command prompt appearance
+  Format: Plain text template
+  Max length: 63 characters
+
+  Variables:
+    $user     - Replaced with username from USER.CFG
+    %XX       - ASCII character in hex (e.g., %3E = ">")
+
+  Default: [$user@PRos] >
+
+[THEME.CFG]
+  Purpose: Terminal color scheme
+  Format: 16 lines of RGB values
+
+  Colors (in order):
+    Line 1:  Black
+    Line 2:  Blue
+    Line 3:  Green
+    Line 4:  Cyan
+    Line 5:  Red
+    Line 6:  Magenta
+    Line 7:  Brown
+    Line 8:  Light Gray
+    Line 9:  Dark Gray
+    Line 10: Light Blue
+    Line 11: Light Green
+    Line 12: Light Cyan
+    Line 13: Light Red
+    Line 14: Light Magenta
+    Line 15: Yellow
+    Line 16: White
+
+  Format per line: R G B (decimal values 0-63)
+  Example: 63 0 0 (bright red)
+
+  Edit: Use THEME.BIN program or manually edit file
+
+[TIMEZONE.CFG]
+    Purpose: Current timezone offset
+    Format: 1 line with decimal vaule
+    Vaules: -12 to 12
+
+    Example: -5 (UTC-5)
+
+    Edit: Use SETTINGS.BIN or manually edit file
+
+[FONT.CFG]
+    Purpose: Current font filename
+    Format: 1 line with filename of the font 
+              stored at FONTS.DIR/
+    Vaules: 8.3 filename
+
+    Example: BOLD.FNT
+
+    Edit: Use FONT.BIN or manually edit file
+
+[FIRST_B.CFG]
+  Purpose: First boot detection flag
+  Format: Single digit
+  Values:
+    1 - First boot (triggers SETUP.BIN)
+    0 - Normal boot
+
+  WARNING: Do not delete this file!
+
+CREATING CONFIG FILES:
+  - Use TOUCH command to create empty file
+  - Use WRITE command for simple content
+  - Use WRITER.BIN for complex editing
+
+  Example:
+    touch CONF/PROMPT.CFG
+    write CONF/PROMPT.CFG [$user] >
+
+DELETING CONFIG FILES:
+  Generally safe, but system will use defaults or may behave unexpectedly.
+
+
+===========================================================================

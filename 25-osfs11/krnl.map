@@ -393,24 +393,23 @@ LOAD lib/orangescrt.a
                 0x00006786                hd_handler
  .text          0x000067b1      0xc36 kernel/gfx.o
                 0x000067b1                task_gfx
- .text          0x000073e7      0x6f5 kernel/desktop.o
+ .text          0x000073e7      0x6f9 kernel/desktop.o
                 0x000073e7                task_desktop
- .text          0x00007adc      0xa37 kernel/wm.o
-                0x00007dc1                wm_init
-                0x00007e67                wm_create_window
-                0x00007fdf                wm_close_window
-                0x00008022                wm_draw_desktop
-                0x000080aa                wm_draw_window
-                0x0000821a                wm_draw_cursor
-                0x000082a9                wm_update_mouse
-                0x00008396                wm_hit_test
-                0x00008432                wm_focus_window
-                0x000084e2                wm_handle_click
- .text          0x00008513      0x379 kernel/mouse.o
-                0x000085e4                mouse_init
-                0x000086e3                mouse_handler
-                0x00008865                mouse_get_state
- *fill*         0x0000888c        0x4 
+ .text          0x00007ae0      0xa37 kernel/wm.o
+                0x00007dc5                wm_init
+                0x00007e6b                wm_create_window
+                0x00007fe3                wm_close_window
+                0x00008026                wm_draw_desktop
+                0x000080ae                wm_draw_window
+                0x0000821e                wm_draw_cursor
+                0x000082ad                wm_update_mouse
+                0x0000839a                wm_hit_test
+                0x00008436                wm_focus_window
+                0x000084e6                wm_handle_click
+ .text          0x00008517      0x379 kernel/mouse.o
+                0x000085e8                mouse_init
+                0x000086e7                mouse_handler
+                0x00008869                mouse_get_state
  .text          0x00008890      0x19a kernel/kliba.o
                 0x00008890                disp_str
                 0x000088ce                disp_color_str

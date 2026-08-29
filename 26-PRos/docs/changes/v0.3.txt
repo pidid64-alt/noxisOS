@@ -1,0 +1,99 @@
+----------------------- Key changes x16-PRos v0.3 ----------------------
+
+=======================================================================================
+
+1. Changed terminal visuals:
+1) Added pseudo-graphics
+2) The info menu is not displayed immediately upon startup
+
+==============================================================================================
+
+2. Changed bootloader:
+1) Now launches the system correctly on real hardware due to the installation of the stack
+2) Removed unnecessary component checks as useless:
+1. Removed CPU check
+2. Removed RAM check
+3) Improved OS startup algorithm:
+1. Disk check
+2. Sector verification
+3. Reset disk controller to avoid errors
+
+======================================================================================
+
+3. New commands in the terminal:
+1) disk-i -- information about the disk from which x16-PRos is loaded. Displays the following data:
+1. Whether LBA (Logical block addressing) is supported
+2. CHS (Cylinder, Head, Sector) parameters:
+- Cylinders
+- Heads
+- Sectors
+2) Commands for launching new programs:
+- disk-tools
+- BASIC
+- mine
+- memory
+- space
+
+===========================================================================================
+
+4. Sound effects (PC Speaker):
+1) When turning on
+2) When turning off
+3) When a startup error occurs programs
+
+====================================================================================
+
+5. Improved error handling:
+Display error code when load command is executed incorrectly.
+--------------------
+Codes and their meanings:
+--------------------
+01 Unknown/invalid command
+02 Address mark not found
+03 Disk is write-protected
+04 Sector not found
+05 Error resetting HDD
+06 Floppy disk was replaced
+07 Initialization error
+08 DMA error
+09 Out of 64KB limits when working with DMA
+0A - Bad sector
+0B - Bad track
+0C - Incorrect track/sector number (In some BIOSes - incorrect device number)
+0D - Incorrect sector number
+0E - Control data address mark detected
+0F - DMA error
+10 - Data error (incorrect checksum)
+11 - Data correction was performed to fix the error
+20 - Controller failure
+30 - Unsupported floppy disk format
+31 - Floppy disk ejected
+32 - Unsupported floppy disk type
+40 - Track seek failure
+80 - Timeout error
+AA - Disk not ready
+BB - Incompatible controller or unknown error
+CC - Write failure
+E0 - Unidentified controller error
+FF - Read error
+
+============================================================================================
+
+6. New programs:
+1) disk-tools -- program for formatting disk sectors
+2) BASIC -- interpreter of the micro-BASIC programming language. It is a port of the bare metal interpreter from the repository of the author of the x16-PRos project (https://github.com/PRoX2011/micro-BASIC)
+3) mine -- a minesweeper game that works in text mode. It may crash when adding new programs
+4) memory -- a program for viewing the contents of memory in real time. Displays memory in both ASCII and HEX formats
+5) space -- arcade game by Qwez
+
+========================================================================================
+
+7. Minor changes:
+1) The cursor has been changed in writer program
+2) Graphic bugs have been fixed in the programs:
+1. writer
+2. brainf
+3. calc
+4. barchart
+
+Copyright (C) 2024-2025 PRoX 2011

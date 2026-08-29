@@ -1,0 +1,107 @@
+----------------------- Key changes x16-PRos v0.4 ----------------------
+
+=======================================================================================
+
+1. File System Support:
+1) Added FAT12 file system support, enabling structured file storage and management.
+2) Introduced new file operation commands:
+   - dir: Lists all files on the disk, displaying filenames and total file count.
+   - cat <filename>: Displays the contents of a specified file.
+   - del <filename>: Deletes a specified file from the disk.
+   - copy <filename1> <filename2>: Copies the contents of one file to another.
+   - ren <filename1> <filename2>: Renames a file.
+   - size <filename>: Displays the size of a specified file in bytes.
+   - touch <filename>: Creates an empty file with the specified name.
+   - write <filename> <text>: Writes provided text to a specified file.
+3) Enhanced error handling for file operations with specific error messages:
+   - "No filename or not enough filenames" for missing file arguments.
+   - "File not found" for non-existent files.
+   - "Could not write file. Write protected or invalid filename?" for write failures.
+   - "Target file already exists!" for attempting to overwrite existing files.
+   - "No text provided for writing" for missing text in write command.
+   - "Cannot execute kernel file!" to prevent execution of the kernel file.
+
+=======================================================================================
+
+2. Kernel API Introduction:
+1) Added a modular kernel API for improved system functionality:
+   - Output API (INT 21h): Handles screen output operations.
+   - File System API (INT 22h): Manages file operations like reading, writing, and deleting.
+   - String API (INT 23h): Provides string manipulation functions (e.g., tokenize, uppercase, length).
+2) API initialization during kernel startup for seamless integration of features.
+
+=======================================================================================
+
+3. Improved Command Line Interpreter:
+1) Rewritten shell (PRos terminal) with enhanced command parsing:
+   - Supports command tokenization for handling arguments (e.g., filenames in file operations).
+   - Automatically appends .BIN extension to commands if not specified, allowing direct execution of binary files.
+   - Converts input to uppercase for case-insensitive command processing.
+2) New commands:
+   - ver: Displays the terminal version ("PRos terminal v0.2").
+   - exit: Exits to the bootloader, equivalent to a system reboot.
+3) Improved command execution flow with jump to get_cmd for continuous shell operation.
+4) Removed hardcoded program loading (e.g., writer, snake, BASIC) in favor of loading .BIN files via the file system.
+
+=======================================================================================
+
+4. Stack and Segment Initialization:
+1) Enhanced stack setup in the kernel:
+   - Sets DS, ES, SS, FS, and GS registers to 0x2000 for consistent segment addressing.
+   - Initializes stack pointer to 0xFFFE for improved stack management.
+2) Added CLI/STI for safe initialization and cld for consistent string operations.
+
+=======================================================================================
+
+5. Improved String and Output Functions:
+1) Enhanced print_string to handle newline (LF) characters by outputting both CR and LF.
+2) Added string manipulation functions via the String API:
+   - string_input_string: Reads user input into a buffer.
+   - string_string_chomp: Removes trailing whitespace from strings.
+   - string_string_tokenize: Splits input into command and parameters.
+   - string_string_copy: Copies strings between buffers.
+   - string_string_uppercase: Converts strings to uppercase.
+   - string_string_length: Calculates string length.
+   - string_int_to_string: Converts integers to string representation.
+   - string_get_date_string: Formats date as DD/MM/YY.
+   - string_get_time_string: Formats time as HH:MM:SS.
+3) Improved cursor handling with string_get_cursor_pos and string_move_cursor for precise screen output control.
+
+=======================================================================================
+
+6. Enhanced Date and Time Display:
+1) Replaced manual date/time formatting with API-based functions:
+   - string_get_date_string: Outputs date in DD/MM/YY format.
+   - string_get_time_string: Outputs time in HH:MM:SS format.
+2) Improved output formatting with cyan-colored text for date and time.
+
+=======================================================================================
+
+7. Disk Information Changes:
+1) Removed disk-i command in favor of file system-based operations.
+2) Updated info menu to reflect FAT12 file system and 1.44 MB disk size (replacing hardcoded sector count).
+
+=======================================================================================
+
+8. Program Loading Simplification:
+1) Eliminated individual program loading routines (e.g., start_writer, start_snake) from v0.3.
+2) Unified program execution via fs_load_file, loading .BIN files to address 0x8000 for execution.
+3) Added protection against executing the kernel file (KERNEL.BIN) with a specific error message.
+
+=======================================================================================
+
+9. Programs bug fixes:
+1) Space arcade graphics fixes.
+2) Writer now supports multiline text
+
+=======================================================================================
+
+10. Minor Changes:
+1) Updated version string in header to "x16 PRos v0.4".
+2) Updated info menu to reflect OS version 0.4 and FAT12 file system.
+3) Removed redundant disk parameter functions (e.g., get_disk_params, display_disk_info)
+4) Removed micro-BASIC and disk-tools programs
+
+=======================================================================================
+
+Copyright (C) 2024-2025 PRoX2011
