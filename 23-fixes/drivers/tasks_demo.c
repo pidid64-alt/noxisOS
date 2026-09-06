@@ -46,7 +46,8 @@ void demo_count(void) {
 /* ----------------------------------------------------------------- clock */
 void demo_clock(void) {
     const int COL = 0, ROW = 22;
-    uint8_t yr, mo, day, h, m, s;
+    uint16_t yr;
+    uint8_t mo, day, h, m, s;
     char buf[8];
     for (;;) {
         if (task_should_exit()) break;

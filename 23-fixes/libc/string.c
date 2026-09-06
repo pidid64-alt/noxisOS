@@ -63,6 +63,10 @@ void append(char s[], char n) {
 
 void backspace(char s[]) {
     int len = strlen(s);
+    /* Guard the empty case: the keyboard driver calls this on every
+     * Backspace scancode, including when the line buffer is already empty,
+     * and s[len-1] would then write one byte before the buffer. */
+    if (len == 0) return;
     s[len-1] = '\0';
 }
 

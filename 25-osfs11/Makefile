@@ -112,13 +112,21 @@ install-cmdtar : everything
 # with the mirrors in the test file) and runs them on the host. -m32 keeps
 # the test's integer model identical to the kernel's.
 GFX_UNIT	= tests/gfx_unit
+WM_UNIT		= tests/wm_unit
 GFX_UNITFLAGS	= -m32 -Wall -Wextra -iquote tests/stubs
 
-test : $(GFX_UNIT)
+test : $(GFX_UNIT) $(WM_UNIT)
 	./$(GFX_UNIT)
+	./$(WM_UNIT)
 
 $(GFX_UNIT) : tests/gfx_unit.c kernel/gfx.c lib/gfx.c tests/stubs/*.h
 	$(CC) $(GFX_UNITFLAGS) -o $@ $<
+
+# Same idea for the window manager: the real kernel/wm.c is #included, so
+# every PRIVATE drawing primitive is exercised. The 8x16 font comes along via
+# kernel/wm_font.h, which wm.c includes from its own directory.
+$(WM_UNIT) : tests/wm_unit.c kernel/wm.c kernel/wm_font.h tests/stubs/*.h
+	$(CC) $(GFX_UNITFLAGS) -o $@ tests/wm_unit.c
 
 boot/boot.bin : boot/boot.asm boot/include/load.inc boot/include/fat12hdr.inc
 	$(ASM) $(ASMBFLAGS) -o $@ $<

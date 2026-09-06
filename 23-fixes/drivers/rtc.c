@@ -18,7 +18,7 @@ static uint8_t bcd_to_bin(uint8_t bcd) {
     return (uint8_t)((bcd >> 4) * 10 + (bcd & 0xF));
 }
 
-void rtc_get_time(uint8_t *yr, uint8_t *mo, uint8_t *day,
+void rtc_get_time(uint16_t *yr, uint8_t *mo, uint8_t *day,
                   uint8_t *h, uint8_t *m, uint8_t *s) {
     uint8_t sec1, sec2;
 
@@ -34,8 +34,9 @@ void rtc_get_time(uint8_t *yr, uint8_t *mo, uint8_t *day,
     *h   = bcd_to_bin(cmos_read(0x04));
     *day = bcd_to_bin(cmos_read(0x07));
     *mo  = bcd_to_bin(cmos_read(0x08));
-    /* CMOS year register holds the low two digits; assume 2000+ epoch. */
-    *yr  = (uint8_t)(2000 + bcd_to_bin(cmos_read(0x09)));
+    /* CMOS year register holds the low two digits; assume 2000+ epoch.
+     * uint16_t: 2000 + 26 does not fit in a uint8_t. */
+    *yr  = (uint16_t)(2000 + bcd_to_bin(cmos_read(0x09)));
 }
 
 /* Print a value that should always occupy two digits, zero-padded
@@ -53,13 +54,14 @@ static void kprint_2digit(uint8_t v) {
 }
 
 void rtc_print_time(void) {
-    uint8_t yr, mo, day, h, m, s;
+    uint16_t yr;
+    uint8_t mo, day, h, m, s;
     rtc_get_time(&yr, &mo, &day, &h, &m, &s);
 
-    char buf[6];
+    char buf[8];
 
     /* Year */
-    int_to_ascii(yr, buf);
+    int_to_ascii((int)yr, buf);
     kprint(buf);
     kprint("-");
 

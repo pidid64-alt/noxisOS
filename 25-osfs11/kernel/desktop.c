@@ -94,7 +94,6 @@ PRIVATE void desktop_run(u8 *saved)
 {
 	int mx, my, buttons;
 	int last_tick = get_ticks();
-	int frame_count = 0;
 
 	/* Switch to graphics mode */
 	vga_save_state(saved);
@@ -106,62 +105,34 @@ PRIVATE void desktop_run(u8 *saved)
 	wm_init(&desktop, desktop_framebuffer);
 
 	/* Create some demo windows */
-	wm_create_window(&desktop, 20, 20, 120, 80, "Welcome");
-	wm_create_window(&desktop, 80, 50, 140, 100, "Window 1");
-	wm_create_window(&desktop, 160, 80, 130, 90, "Demo");
+	wm_create_window(&desktop, 20, 20, 120, 90, "Welcome");
+	wm_create_window(&desktop, 80, 50, 140, 110, "Window 1");
+	wm_create_window(&desktop, 160, 80, 130, 100, "Demo");
 
 	wm_focus_window(&desktop, 0);
 
 	/* Force initial draw */
-	wm_draw_desktop(&desktop);
-
-	/* Draw windows in z-order */
-	int z, i;
-	for (z = 1; z <= WM_MAX_WINDOWS; z++) {
-		for (i = 0; i < WM_MAX_WINDOWS; i++) {
-			if (desktop.windows[i].state == WM_WINDOW_NORMAL &&
-			    desktop.windows[i].z_order == z) {
-				wm_draw_window(&desktop, i);
-			}
-		}
-	}
-	wm_draw_cursor(&desktop);
+	wm_paint_all(&desktop);
 	desktop_present();
 
 	/* Main desktop loop */
 	while (desktop.running) {
-		/* Get mouse state */
+		/* Feed the driver's absolute position into the WM as a delta.
+		 * wm_update_mouse() also owns click-edge detection, so the
+		 * button state no longer lives in a function-static here --
+		 * it used to survive across desktop sessions, which made the
+		 * first click after a restart get swallowed. */
 		mouse_get_state(&mx, &my, &buttons);
-		desktop.mouse_x = mx;
-		desktop.mouse_y = my;
-		desktop.mouse_buttons = buttons;
-
-		/* Check for left click */
-		static int last_buttons = 0;
-		if ((buttons & 1) && !(last_buttons & 1)) {
-			wm_handle_click(&desktop, mx, my);
-		}
-		last_buttons = buttons;
+		wm_update_mouse(&desktop,
+		                mx - desktop.mouse_x,
+		                my - desktop.mouse_y,
+		                buttons);
 
 		/* Redraw at ~20 FPS */
 		if (get_ticks() - last_tick >= 2) {
-			wm_draw_desktop(&desktop);
-
-			/* Draw windows in z-order */
-			for (z = 1; z <= WM_MAX_WINDOWS; z++) {
-				for (i = 0; i < WM_MAX_WINDOWS; i++) {
-					if (desktop.windows[i].state == WM_WINDOW_NORMAL &&
-					    desktop.windows[i].z_order == z) {
-						wm_draw_window(&desktop, i);
-					}
-				}
-			}
-
-			wm_draw_cursor(&desktop);
+			wm_paint_all(&desktop);
 			desktop_present();
-
 			last_tick = get_ticks();
-			frame_count++;
 		}
 
 		/* Check for ESC to exit */

@@ -102,6 +102,18 @@ class Noxis:
             time.sleep(0.3)
         return False
 
+    def expect_re(self, pattern, seconds=5):
+        """Like expect(), but matches a regex against each screen row. Used
+        where the expected output is not a fixed string (e.g. the wall
+        clock), so the assertion cannot depend on today's date."""
+        rx = re.compile(pattern)
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            if any(rx.search(row) for row in self.screen()):
+                return True
+            time.sleep(0.3)
+        return False
+
     def read_task_ticks(self, name):
         """Parse the TASKS table: find the row for `name`, return its ticks."""
         for row in self.screen():
@@ -143,7 +155,11 @@ def t1_regress_interactive():
         v.type_line("echo hi noxis")
         assert v.expect("hi noxis"), "ECHO printed nothing"
         v.type_line("time")
-        assert v.expect("-20"), "TIME printed no date"
+        # A full YYYY-MM-DD HH:MM:SS stamp. The old assertion was
+        # expect("-20"), which only matched when the day of the month was
+        # 20..29 -- the test passed or failed depending on the date.
+        assert v.expect_re(r"\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b"), \
+            "TIME printed no YYYY-MM-DD HH:MM:SS stamp"
         return True, ""
     finally:
         v.close()

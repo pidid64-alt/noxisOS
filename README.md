@@ -58,8 +58,13 @@ YIELD   voluntarily reschedule the CPU
 
 You need: `gcc` (or the `i686-elf` cross-compiler), `nasm`, `make`, and `qemu-system-i386`.
 
+The kernel lives in `23-fixes/`, and that is where its `Makefile` is -- there
+is no Makefile at the repository root.
+
 ```bash
-# Build the floppy image (os-image.bin)
+cd 23-fixes
+
+# Build the floppy image (os-image.bin) and the GRUB image (noxis.iso)
 make
 
 # Run it in QEMU
@@ -69,6 +74,9 @@ make run
 Type `HELP` at the prompt and explore. `make debug` launches QEMU with a GDB
 stub (`localhost:1234`) if you want to step through the kernel with symbols.
 
+`noxis.iso` needs `grub-mkrescue`; if you only have the floppy path, build
+`make os-image.bin` instead of the default `all` target.
+
 ### Building with the cross-compiler
 
 If your system `gcc` defaults to 64-bit, you can build a dedicated
@@ -77,6 +85,7 @@ If your system `gcc` defaults to 64-bit, you can build a dedicated
 ```bash
 ./build-i686-elf.sh        # builds binutils + gcc into ~/opt/cross
 export PATH="$HOME/opt/cross/bin:$PATH"
+cd 23-fixes
 make CC=i686-elf-gcc LD=i686-elf-ld
 ```
 
