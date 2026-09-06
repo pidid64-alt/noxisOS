@@ -35,7 +35,7 @@ OBJS		= kernel/kernel.o kernel/start.o kernel/main.o\
 			kernel/clock.o kernel/keyboard.o kernel/tty.o kernel/console.o\
 			kernel/i8259.o kernel/global.o kernel/protect.o kernel/proc.o\
 			kernel/systask.o kernel/hd.o\
-			kernel/gfx.o kernel/desktop.o kernel/wm.o kernel/mouse.o\
+			kernel/gfx.o kernel/desktop.o kernel/vga.o kernel/wm.o kernel/mouse.o\
 			kernel/kliba.o kernel/klib.o\
 			lib/syslog.o\
 			mm/main.o mm/forkexit.o mm/exec.o\
@@ -57,7 +57,8 @@ DASMOUTPUT	= kernel.bin.asm
 
 # Default starting position
 nop :
-	@echo "why not \`make image' huh? :)"
+	@echo "Desktop: make run-desktop (builds fresh images and starts QEMU)"
+	@echo "Tests:   make test; make test-desktop"
 
 everything : $(ORANGESBOOT) $(ORANGESKERNEL)
 
@@ -66,7 +67,7 @@ all : realclean everything
 image : realclean everything clean buildimg
 
 clean :
-	rm -f $(OBJS) $(LOBJS) $(GFX_UNIT)
+	rm -f $(OBJS) $(LOBJS) $(GFX_UNIT) $(WM_UNIT) $(VGA_UNIT) $(IPC_UNIT)
 
 realclean :
 	rm -f $(OBJS) $(LOBJS) $(LIB) $(ORANGESBOOT) $(ORANGESKERNEL)
@@ -109,17 +110,22 @@ install-cmdtar : everything
 # --- host unit tests ---------------------------------------------------------
 # Compiles the REAL kernel/gfx.c + lib/gfx.c against the stub headers in
 # tests/stubs/ (do NOT add -I include here: the real headers would collide
-# with the mirrors in the test file) and runs them on the host. -m32 keeps
-# the test's integer model identical to the kernel's.
+# with the mirrors in the test file) and runs them on the host. Native host
+# pointers let these tests run without installing a 32-bit host libc.
 GFX_UNIT	= tests/gfx_unit
 WM_UNIT		= tests/wm_unit
-GFX_UNITFLAGS	= -m32 -Wall -Wextra -iquote tests/stubs
+VGA_UNIT	= tests/vga_unit
+IPC_UNIT	= tests/ipc_unit
+GFX_UNITFLAGS	= -Wall -Wextra -iquote tests/stubs
 
-test : $(GFX_UNIT) $(WM_UNIT)
+test : $(GFX_UNIT) $(WM_UNIT) $(VGA_UNIT) $(IPC_UNIT)
 	./$(GFX_UNIT)
 	./$(WM_UNIT)
+	./$(VGA_UNIT)
+	./$(IPC_UNIT)
+	python3 tests/image_unit.py
 
-$(GFX_UNIT) : tests/gfx_unit.c kernel/gfx.c lib/gfx.c tests/stubs/*.h
+$(GFX_UNIT) : tests/gfx_unit.c kernel/gfx.c lib/gfx.c lib/desktop.c include/vga.h tests/stubs/*.h
 	$(CC) $(GFX_UNITFLAGS) -o $@ $<
 
 # Same idea for the window manager: the real kernel/wm.c is #included, so
@@ -127,6 +133,14 @@ $(GFX_UNIT) : tests/gfx_unit.c kernel/gfx.c lib/gfx.c tests/stubs/*.h
 # kernel/wm_font.h, which wm.c includes from its own directory.
 $(WM_UNIT) : tests/wm_unit.c kernel/wm.c kernel/wm_font.h tests/stubs/*.h
 	$(CC) $(GFX_UNITFLAGS) -o $@ tests/wm_unit.c
+
+$(VGA_UNIT) : tests/vga_unit.c kernel/vga.c include/vga.h tests/stubs/*.h
+	$(CC) $(GFX_UNITFLAGS) -o $@ $<
+
+# proc.c intentionally translates through 32-bit physical addresses. Static
+# test messages are kept below 4 GB with -no-pie; no 32-bit host libc is needed.
+$(IPC_UNIT) : tests/ipc_unit.c kernel/proc.c tests/stubs/*.h
+	$(CC) $(GFX_UNITFLAGS) -no-pie -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -o $@ $<
 
 boot/boot.bin : boot/boot.asm boot/include/load.inc boot/include/fat12hdr.inc
 	$(ASM) $(ASMBFLAGS) -o $@ $<
@@ -164,10 +178,10 @@ kernel/clock.o: kernel/clock.c
 kernel/keyboard.o: kernel/keyboard.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/tty.o: kernel/tty.c
+kernel/tty.o: kernel/tty.c include/vga.h
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/console.o: kernel/console.c
+kernel/console.o: kernel/console.c include/vga.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/i8259.o: kernel/i8259.c
@@ -194,10 +208,13 @@ kernel/systask.o: kernel/systask.c
 kernel/hd.o: kernel/hd.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/gfx.o: kernel/gfx.c
+kernel/vga.o: kernel/vga.c include/vga.h
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/desktop.o: kernel/desktop.c
+kernel/gfx.o: kernel/gfx.c include/vga.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+kernel/desktop.o: kernel/desktop.c include/vga.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 kernel/wm.o: kernel/wm.c
@@ -206,7 +223,7 @@ kernel/wm.o: kernel/wm.c
 kernel/mouse.o: kernel/mouse.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-kernel/klib.o: kernel/klib.c
+kernel/klib.o: kernel/klib.c include/elf.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 lib/misc.o: lib/misc.c
@@ -269,7 +286,7 @@ mm/main.o: mm/main.c
 mm/forkexit.o: mm/forkexit.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-mm/exec.o: mm/exec.c
+mm/exec.o: mm/exec.c include/elf.h
 	$(CC) $(CFLAGS) -o $@ $<
 
 fs/main.o: fs/main.c
@@ -287,3 +304,33 @@ fs/link.o: fs/link.c
 fs/disklog.o: fs/disklog.c
 	$(CC) $(CFLAGS) -o $@ $<
 
+
+# --- Fresh desktop images (do not boot the historical checked-in binaries) ---
+DESKTOP_DIR = build/desktop
+QEMU ?= qemu-system-i386
+
+.PHONY: desktop-image run-desktop desktop-iso test-desktop
+
+# Object files are present in old commits. Force a SOURCE rebuild instead of
+# trusting their checkout timestamps, and order clean/build submakes so -j is safe.
+desktop-image:
+	$(MAKE) realclean
+	$(MAKE) everything
+	$(MAKE) -C command realclean
+	$(MAKE) -C command everything
+	python3 scripts/desktop_image.py --output $(DESKTOP_DIR)
+
+run-desktop: desktop-image
+	$(QEMU) -m 32 -drive file=$(DESKTOP_DIR)/a.img,format=raw,if=floppy \
+		-drive file=$(DESKTOP_DIR)/100m.img,format=raw,if=ide,index=0 -boot a
+
+desktop-iso: desktop-image
+	mkdir -p $(DESKTOP_DIR)/iso
+	cp $(DESKTOP_DIR)/a.img $(DESKTOP_DIR)/iso/a.img
+	genisoimage -quiet -V noxisOS -o $(DESKTOP_DIR)/osfs11.iso \
+		-b a.img -hide-rr-moved $(DESKTOP_DIR)/iso
+	@echo "Attach $(DESKTOP_DIR)/100m.img as an IDE disk when booting this ISO."
+
+test-desktop: desktop-image
+	python3 tests/desktop_qemu_test.py --qemu $(QEMU) --image-dir $(DESKTOP_DIR) --boot floppy
+	python3 tests/desktop_qemu_test.py --qemu $(QEMU) --image-dir $(DESKTOP_DIR) --boot hd

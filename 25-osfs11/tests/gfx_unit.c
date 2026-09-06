@@ -45,6 +45,7 @@ typedef unsigned int	u32;
 
 #define TASK_TTY	0
 #define TASK_GFX	5
+#define TASK_DESKTOP	6
 #define ANY		1000		/* real: NR_TASKS+NR_PROCS+10 */
 #define SEND		1
 #define RECEIVE		2
@@ -54,6 +55,8 @@ enum {
 	GFX_RUN,	/* keep values self-consistent; nothing external depends on them */
 	GFX_DONE,
 	TTY_POLL_KEY,
+	DESKTOP_START,
+	DESKTOP_DONE,
 };
 
 /* MESSAGE: layout mirrors include/type.h (fields gfx.c touches). */
@@ -66,12 +69,15 @@ typedef struct {
 /* ---- kernel function stubs (signatures match include/sys/proto.h) ------- */
 static u8	fake_ports[0x10000];	/* in_byte/out_byte land here, unused below */
 static int	g_ticks = 0;
+static int	g_sr_result, g_sr_bad_reply;
 static int	g_sr_func, g_sr_dest, g_sr_type;	/* send_recv capture */
 
 int	get_ticks(void)			{ return g_ticks; }
 void	send_recv(int func, int src_dest, MESSAGE *m)
 {
 	g_sr_func = func; g_sr_dest = src_dest; g_sr_type = m->type;
+	m->type = g_sr_bad_reply ? -1 : (src_dest == TASK_DESKTOP ? DESKTOP_DONE : GFX_DONE);
+	m->RETVAL = g_sr_result;
 }
 void	reset_msg(MESSAGE *m)		{ memset(m, 0, sizeof(*m)); }
 void	out_byte(u32 port, u8 val)	{ fake_ports[port & 0xFFFF] = val; }
@@ -89,11 +95,16 @@ static int failures = 0;
 /* Real hardware: linear framebuffer at 0xA0000 (unmapped here).
  * Test: redirect to plain memory so gfx_present() can be exercised. */
 static u8	test_fb[GFX_FB_BYTES];
-#define		GFX_FB_BASE	((u32)(uintptr_t)test_fb)
+#define		GFX_FB_BASE	((uintptr_t)test_fb)
+
+u8 vga_framebuffer[GFX_FB_BYTES];
+int vga_enter_graphics(void) { return 0; }
+void vga_leave_graphics(void) {}
 
 /* Pull in the real implementations (all functions now in this TU). */
 #include "../kernel/gfx.c"
 #include "../lib/gfx.c"
+#include "../lib/desktop.c"
 
 /* ---------------- test scaffolding -------------------------------------- */
 static int checks = 0;
@@ -107,42 +118,42 @@ int main(void)
 	int bad = 0;
 	for (int y = 141; y < GFX_FB_H; y++)	/* shapes end at y=140 */
 		for (int x = 0; x < GFX_FB_W; x++)
-			if (gfx_buf[y * GFX_FB_W + x] != (u8)((x / 20) % 16))
+			if (vga_framebuffer[y * GFX_FB_W + x] != (u8)((x / 20) % 16))
 				bad++;
 	CHECK(bad == 0, "pattern: rows below the shapes == (x/20)%16");
 
-	CHECK(gfx_buf[65 * GFX_FB_W + 80]  == 15, "white disc centre (80,65)");
-	CHECK(gfx_buf[65 * GFX_FB_W + 160] == 1,  "blue disc centre (160,65)");
-	CHECK(gfx_buf[65 * GFX_FB_W + 240] == 4,  "red disc centre (240,65)");
-	CHECK(gfx_buf[120 * GFX_FB_W + 160] == 14, "yellow rect interior (160,120)");
+	CHECK(vga_framebuffer[65 * GFX_FB_W + 80]  == 15, "white disc centre (80,65)");
+	CHECK(vga_framebuffer[65 * GFX_FB_W + 160] == 1,  "blue disc centre (160,65)");
+	CHECK(vga_framebuffer[65 * GFX_FB_W + 240] == 4,  "red disc centre (240,65)");
+	CHECK(vga_framebuffer[120 * GFX_FB_W + 160] == 14, "yellow rect interior (160,120)");
 
 	int bottom_bad = 0;
 	for (int y = 150; y < GFX_FB_H; y++)
 		for (int x = 0; x < GFX_FB_W; x++)
-			if (gfx_buf[y * GFX_FB_W + x] != (u8)((x / 20) % 16))
+			if (vga_framebuffer[y * GFX_FB_W + x] != (u8)((x / 20) % 16))
 				bottom_bad++;
 	CHECK(bottom_bad == 0, "bottom band (y>=150) stays clean bars");
 
 	/* === gfx_present copies the full double buffer to the framebuffer === */
 	gfx_present();
-	CHECK(memcmp(test_fb, gfx_buf, GFX_FB_BYTES) == 0, "present: fb == double buffer");
+	CHECK(memcmp(test_fb, vga_framebuffer, GFX_FB_BYTES) == 0, "present: fb == double buffer");
 
 	/* === Phase 2: bouncing ball === */
 	gfx_draw_ball(160, 100, 20, 0);
 
-	CHECK(gfx_buf[50 * GFX_FB_W + 50] == 0, "ball: black bg (50,50)");
-	CHECK(gfx_buf[0 * GFX_FB_W + 0] == 8, "ball: top-left border grey");
-	CHECK(gfx_buf[(GFX_FB_H-1) * GFX_FB_W + 0] == 8, "ball: bottom-left border grey");
-	CHECK(gfx_buf[0 * GFX_FB_W + (GFX_FB_W-1)] == 8, "ball: top-right border grey");
-	CHECK(gfx_buf[(GFX_FB_H-1) * GFX_FB_W + (GFX_FB_W-1)] == 8, "ball: bottom-right border grey");
-	CHECK(gfx_buf[100 * GFX_FB_W + 160] == 1, "ball: filled colour=1 at centre (frame 0)");
+	CHECK(vga_framebuffer[50 * GFX_FB_W + 50] == 0, "ball: black bg (50,50)");
+	CHECK(vga_framebuffer[0 * GFX_FB_W + 0] == 8, "ball: top-left border grey");
+	CHECK(vga_framebuffer[(GFX_FB_H-1) * GFX_FB_W + 0] == 8, "ball: bottom-left border grey");
+	CHECK(vga_framebuffer[0 * GFX_FB_W + (GFX_FB_W-1)] == 8, "ball: top-right border grey");
+	CHECK(vga_framebuffer[(GFX_FB_H-1) * GFX_FB_W + (GFX_FB_W-1)] == 8, "ball: bottom-right border grey");
+	CHECK(vga_framebuffer[100 * GFX_FB_W + 160] == 1, "ball: filled colour=1 at centre (frame 0)");
 	{
 		/* Outline: white pixels exist, all within ~2 px of the ideal
 		 * radius (midpoint circle picks the nearest pixel to the arc). */
 		int seen = 0, min_d2 = 1 << 30, max_d2 = -1;
 		for (int y = 0; y < GFX_FB_H; y++)
 			for (int x = 0; x < GFX_FB_W; x++)
-				if (gfx_buf[y * GFX_FB_W + x] == 15) {
+				if (vga_framebuffer[y * GFX_FB_W + x] == 15) {
 					int dx = x - 160, dy = y - 100, d2 = dx * dx + dy * dy;
 					seen++;
 					if (d2 < min_d2) min_d2 = d2;
@@ -154,10 +165,10 @@ int main(void)
 	}
 
 	gfx_draw_ball(160, 100, 20, 5);
-	CHECK(gfx_buf[100 * GFX_FB_W + 160] == 6, "ball: colour cycles to 6 at frame 5");
+	CHECK(vga_framebuffer[100 * GFX_FB_W + 160] == 6, "ball: colour cycles to 6 at frame 5");
 
 	/* === clipping: primitives must not write outside the buffer === */
-	memset(gfx_buf, 0xAA, sizeof(gfx_buf));	/* sentinel fill */
+	memset(vga_framebuffer, 0xAA, sizeof(vga_framebuffer));	/* sentinel fill */
 	gfx_putpixel(-1, 0, 1);  gfx_putpixel(0, -1, 1);
 	gfx_putpixel(GFX_FB_W, 0, 1);  gfx_putpixel(0, GFX_FB_H, 1);
 	gfx_hline(-10, GFX_FB_W + 10, -1, 1);		/* row clipped away */
@@ -171,37 +182,31 @@ int main(void)
 			u8 want = 0xAA;				/* untouched */
 			if (y == 5)              want = 1;	/* hline row */
 			if (x == GFX_FB_W - 1)   want = 1;	/* vline col */
-			if (gfx_buf[y * GFX_FB_W + x] != want)
+			if (vga_framebuffer[y * GFX_FB_W + x] != want)
 				clip_bad++;
 		}
 	CHECK(clip_bad == 0, "clipping: hline/vline clamp, never wrap or corrupt");
 
 	/* fill_rect clamps to the whole screen */
-	memset(gfx_buf, 0xAA, sizeof(gfx_buf));
+	memset(vga_framebuffer, 0xAA, sizeof(vga_framebuffer));
 	gfx_fill_rect(-10, -10, GFX_FB_W + 10, GFX_FB_H + 10, 2);
 	clip_bad = 0;
 	for (int y = 0; y < GFX_FB_H; y++)
 		for (int x = 0; x < GFX_FB_W; x++)
-			if (gfx_buf[y * GFX_FB_W + x] != 2)
+			if (vga_framebuffer[y * GFX_FB_W + x] != 2)
 				clip_bad++;
 	CHECK(clip_bad == 0, "clipping: fill_rect clamps to screen bounds");
 
 	/* hline/vline swap unsorted endpoints */
-	memset(gfx_buf, 0, sizeof(gfx_buf));
+	memset(vga_framebuffer, 0, sizeof(vga_framebuffer));
 	gfx_hline(50, 10, 7, 3);			/* x1 > x2 */
-	CHECK(gfx_buf[7 * GFX_FB_W + 10] == 3 && gfx_buf[7 * GFX_FB_W + 50] == 3 &&
-	      gfx_buf[7 * GFX_FB_W + 9] == 0 && gfx_buf[7 * GFX_FB_W + 51] == 0,
+	CHECK(vga_framebuffer[7 * GFX_FB_W + 10] == 3 && vga_framebuffer[7 * GFX_FB_W + 50] == 3 &&
+	      vga_framebuffer[7 * GFX_FB_W + 9] == 0 && vga_framebuffer[7 * GFX_FB_W + 51] == 0,
 	      "hline: swaps reversed endpoints");
 	gfx_vline(9, 50, 10, 4);			/* y1 > y2 */
-	CHECK(gfx_buf[10 * GFX_FB_W + 9] == 4 && gfx_buf[50 * GFX_FB_W + 9] == 4 &&
-	      gfx_buf[9 * GFX_FB_W + 9] == 0 && gfx_buf[51 * GFX_FB_W + 9] == 0,
+	CHECK(vga_framebuffer[10 * GFX_FB_W + 9] == 4 && vga_framebuffer[50 * GFX_FB_W + 9] == 4 &&
+	      vga_framebuffer[9 * GFX_FB_W + 9] == 0 && vga_framebuffer[51 * GFX_FB_W + 9] == 0,
 	      "vline: swaps reversed endpoints");
-
-	/* === mode 13h register table sanity === */
-	CHECK(gfx_mode13h[0] == 0x63, "mode13h MISC=0x63");
-	for (int i = 0; i < 16; i++)
-		CHECK(gfx_mode13h[GFX_N_MISC + GFX_N_SEQ + GFX_N_CRTC + GFX_N_GC + i] == (u8)i,
-		      "mode13h AC palette index 0..15");
 
 	/* === user-side wrapper: gfx_run() sends GFX_RUN to TASK_GFX, BOTH === */
 	g_sr_func = g_sr_dest = g_sr_type = -1;		/* poison the capture */
@@ -209,6 +214,14 @@ int main(void)
 	CHECK(g_sr_func == BOTH, "gfx_run uses BOTH (send+receive)");
 	CHECK(g_sr_dest == TASK_GFX, "gfx_run addresses TASK_GFX");
 	CHECK(g_sr_type == GFX_RUN, "gfx_run sends GFX_RUN");
+	CHECK(desktop_start() == 0, "desktop_start returns success");
+	CHECK(g_sr_func == BOTH && g_sr_dest == TASK_DESKTOP && g_sr_type == DESKTOP_START,
+	      "desktop_start sends DESKTOP_START to TASK_DESKTOP");
+	g_sr_result = -1;
+	CHECK(gfx_run() == -1 && desktop_start() == -1, "wrappers propagate a busy VGA result");
+	g_sr_result = 0;
+	g_sr_bad_reply = 1;
+	CHECK(gfx_run() == -1 && desktop_start() == -1, "wrappers reject unexpected replies");
 	if (failures == 0)
 		printf("ALL %d GFX UNIT CHECKS PASSED\n", checks);
 	else

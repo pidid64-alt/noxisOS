@@ -259,6 +259,8 @@ void shabby_shell(const char * tty_name)
 	int fd_stdout = open(tty_name, O_RDWR);
 	assert(fd_stdout == 1);
 
+	printf("noxisOS shell: desktop = GUI, demo = graphics test\n");
+	printf("Alt+F1: boot log, Alt+F2/F3: shells. ESC exits graphics.\n");
 	char rdbuf[128];
 
 	while (1) {
