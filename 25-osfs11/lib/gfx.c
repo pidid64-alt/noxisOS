@@ -26,14 +26,15 @@
  * Ask TASK_GFX to run the graphics demo. The calling process sleeps until
  * TASK_GFX replies (after the demo ends or ESC is pressed).
  *
- * @return 0 on success.
+ * @return 0 on success, -1 if the VGA device is busy or the reply is invalid.
  *****************************************************************************/
 PUBLIC int gfx_run(void)
 {
 	MESSAGE msg;
+	memset(&msg, 0, sizeof(msg));
 	msg.type = GFX_RUN;
 
 	send_recv(BOTH, TASK_GFX, &msg);
 
-	return 0;
+	return msg.type == GFX_DONE ? msg.RETVAL : -1;
 }

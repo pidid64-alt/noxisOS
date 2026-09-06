@@ -26,3 +26,8 @@
 
 __pycache__/
 *.py[cod]
+
+# Fresh, locally rebuilt desktop images and tests (historical images stay tracked).
+25-osfs11/build/
+25-osfs11/tests/vga_unit
+25-osfs11/tests/ipc_unit

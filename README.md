@@ -56,6 +56,14 @@ YIELD   voluntarily reschedule the CPU
 
 ## 🚀 Quick start
 
+**Looking for the `desktop` GUI?** That kernel lives in **`25-osfs11/`**, not
+`23-fixes/`. Run `make -C 25-osfs11 run-desktop` to rebuild matching images and
+start QEMU, then type `desktop` at `$`. See [the desktop guide](25-osfs11/README.md)
+for ISO/IDE setup and troubleshooting. The checked-in images are historical;
+changing the source does not update an image you already booted.
+
+The following instructions are for the earlier tutorial shell:
+
 You need: `gcc` (or the `i686-elf` cross-compiler), `nasm`, `make`, and `qemu-system-i386`.
 
 The kernel lives in `23-fixes/`, and that is where its `Makefile` is -- there

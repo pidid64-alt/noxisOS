@@ -19,6 +19,7 @@
 #include "global.h"
 #include "keyboard.h"
 #include "proto.h"
+#include "vga.h"
 
 /* #define __TTY_DEBUG__ */
 
@@ -307,6 +308,10 @@ PUBLIC void scroll_screen(CONSOLE* con, int dir)
  *****************************************************************************/
 PRIVATE void flush(CONSOLE* con)
 {
+	/* Text-console cursor/scroll writes must not move the graphics display. */
+	if (vga_graphics_active())
+		return;
+
 	if (is_current_console(con)) {
 		set_cursor(con->cursor);
 		set_video_start_addr(con->crtc_start);

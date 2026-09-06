@@ -48,6 +48,7 @@
 #include "global.h"
 #include "keyboard.h"
 #include "proto.h"
+#include "vga.h"
 
 
 #define TTY_FIRST	(tty_table)
@@ -78,7 +79,8 @@ PUBLIC void task_tty()
 	for (tty = TTY_FIRST; tty < TTY_END; tty++)
 		init_tty(tty);
 
-	select_console(0);
+	/* TTY0 is the boot log; the first interactive shell lives on TTY1. */
+	select_console(1);
 
 	while (1) {
 		for (tty = TTY_FIRST; tty < TTY_END; tty++) {
@@ -163,6 +165,10 @@ PRIVATE void init_tty(TTY* tty)
  *****************************************************************************/
 PUBLIC void in_process(TTY* tty, u32 key)
 {
+	/* ESC is latched by IRQ1 and polled separately by the graphics owner. */
+	if (vga_graphics_active())
+		return;
+
 	if (!(key & FLAG_EXT)) {
 		put_key(tty, key);
 	}

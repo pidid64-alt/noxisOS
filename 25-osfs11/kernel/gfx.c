@@ -33,16 +33,7 @@
 #include "global.h"
 #include "keyboard.h"
 #include "proto.h"
-
-
-/* Number of registers we save/restore for the VGA state.
- * misc(1) + sequencer(5) + CRTC(25) + graphics controller(9) + attr(21) */
-#define GFX_N_MISC	1
-#define GFX_N_SEQ	5
-#define GFX_N_CRTC	25
-#define GFX_N_GC	9
-#define GFX_N_AC	21
-#define GFX_STATE_SZ	(GFX_N_MISC + GFX_N_SEQ + GFX_N_CRTC + GFX_N_GC + GFX_N_AC)
+#include "vga.h"
 
 
 /* Frame pacing: ~18 FPS, i.e. advance one frame every few ticks. */
@@ -54,39 +45,6 @@
 #define GFX_BALL_MAX_TICKS	1000	/* ~10 s fallback cap for the ball */
 
 
-/* Double buffer: one byte per pixel, 320x200 = 64000 bytes (BSS of this task). */
-static u8 gfx_buf[GFX_FB_BYTES];
-
-
-/*****************************************************************************
- *                                mode 13h register table
- *****************************************************************************
- * Standard VGA mode 13h (320x200, 256 colors, linear framebuffer @0xA0000).
- * Order: MISC, SEQ(5), CRTC(25), GC(9), AC(21).
- *****************************************************************************/
-static const u8 gfx_mode13h[GFX_STATE_SZ] = {
-	/* MISC output */
-	0x63,
-	/* Sequencer */
-	0x03, 0x01, 0x0F, 0x00, 0x0E,
-	/* CRTC */
-	0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F, 0x00, 0x41,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x9C, 0x8E, 0x8F, 0x28,
-	0x40, 0x96, 0xB9, 0xA3, 0xFF,
-	/* Graphics Controller */
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x05, 0x00, 0xFF,
-	/* Attribute Controller */
-	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
-	0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x41, 0x00, 0x0F, 0x00, 0x00
-};
-
-
-/* ---- VGA state save / restore ---------------------------------------------- */
-
-PRIVATE void vga_save_state(u8 * s);
-PRIVATE void vga_restore_state(const u8 * s);
-PRIVATE void vga_write_mode13(void);
-
 /* ---- drawing primitives (all operate on the double buffer) ----------------- */
 PRIVATE void gfx_clear(u8 color);
 PRIVATE void gfx_putpixel(int x, int y, u8 color);
@@ -97,7 +55,7 @@ PRIVATE void gfx_circle(int cx, int cy, int r, u8 color);
 PRIVATE void gfx_fill_circle(int cx, int cy, int r, u8 color);
 
 /* ---- demo phases ----------------------------------------------------------- */
-PRIVATE void gfx_run_demo(u8 * saved);
+PRIVATE int gfx_run_demo(void);
 PRIVATE void gfx_draw_pattern(void);
 PRIVATE void gfx_draw_ball(int bx, int by, int r, int frame);
 PRIVATE void gfx_present(void);
@@ -113,7 +71,6 @@ PRIVATE int  gfx_poll_esc(void);
 PUBLIC void task_gfx()
 {
 	MESSAGE msg;
-	u8 saved[GFX_STATE_SZ];
 
 	while (1) {
 		send_recv(RECEIVE, ANY, &msg);
@@ -122,13 +79,15 @@ PUBLIC void task_gfx()
 		assert(src != TASK_GFX);
 
 		switch (msg.type) {
-		case GFX_RUN:
-			gfx_run_demo(saved);
+		case GFX_RUN: {
+			int result = gfx_run_demo();
 
 			reset_msg(&msg);
 			msg.type = GFX_DONE;
+			msg.RETVAL = result;
 			send_recv(SEND, src, &msg);
 			break;
+		}
 		default:
 			dump_msg("GFX::unknown msg", &msg);
 			break;
@@ -141,17 +100,15 @@ PUBLIC void task_gfx()
  *                                gfx_run_demo
  *****************************************************************************
  * Save text-mode VGA state, switch to mode 13h, run the demo, then restore
- * text mode 3 and return. Called with the saved-state buffer.
+ * text mode 3 and return. VGA state is owned by the shared driver.
  *****************************************************************************/
-PRIVATE void gfx_run_demo(u8 * saved)
+PRIVATE int gfx_run_demo(void)
 {
 	int start = get_ticks();
 
-	/* Switch to graphics mode. */
-	vga_save_state(saved);
-	disable_int();
-	vga_write_mode13();
-	enable_int();
+	if (vga_enter_graphics() != 0)
+		return -1;
+	gfx_poll_esc(); /* discard ESC left over from the text shell */
 
 	/* ---- Phase 1: static test patterns (~2 s) ---- */
 	int last = start;
@@ -192,10 +149,8 @@ PRIVATE void gfx_run_demo(u8 * saved)
 		}
 	}
 
-	/* Restore the text console. */
-	disable_int();
-	vga_restore_state(saved);
-	enable_int();
+	vga_leave_graphics();
+	return 0;
 }
 
 
@@ -236,122 +191,7 @@ PRIVATE void gfx_sync_frame(int * last)
  *****************************************************************************/
 PRIVATE void gfx_present(void)
 {
-	memcpy((void *)GFX_FB_BASE, gfx_buf, GFX_FB_BYTES);
-}
-
-
-/*============================================================================
- *  VGA programming (no BIOS)
- *============================================================================*/
-
-/*****************************************************************************
- *                                vga_save_state
- *****************************************************************************/
-PRIVATE void vga_save_state(u8 * s)
-{
-	int i;
-
-	/* Misc Output Register (read port). */
-	s[0] = in_byte(VGA_MISC_R);
-
-	/* Sequencer. */
-	for (i = 0; i < GFX_N_SEQ; i++) {
-		out_byte(VGA_SEQ_ADDR, i);
-		s[GFX_N_MISC + i] = in_byte(VGA_SEQ_DATA);
-	}
-
-	/* CRTC. */
-	for (i = 0; i < GFX_N_CRTC; i++) {
-		out_byte(VGA_CRTC_ADDR, i);
-		s[GFX_N_MISC + GFX_N_SEQ + i] = in_byte(VGA_CRTC_DATA);
-	}
-
-	/* Graphics Controller. */
-	for (i = 0; i < GFX_N_GC; i++) {
-		out_byte(VGA_GC_ADDR, i);
-		s[GFX_N_MISC + GFX_N_SEQ + GFX_N_CRTC + i] = in_byte(VGA_GC_DATA);
-	}
-
-	/* Attribute Controller: reset the address/data flip-flop, then read. */
-	in_byte(VGA_AC_RDY);
-	for (i = 0; i < GFX_N_AC; i++) {
-		out_byte(VGA_AC_ADDR, i);
-		s[GFX_N_MISC + GFX_N_SEQ + GFX_N_CRTC + GFX_N_GC + i] =
-			in_byte(0x3C1);
-	}
-}
-
-/*****************************************************************************
- *                                vga_restore_state
- *****************************************************************************/
-PRIVATE void vga_restore_state(const u8 * s)
-{
-	int i;
-
-	out_byte(VGA_MISC_W, s[0]);
-
-	for (i = 0; i < GFX_N_SEQ; i++) {
-		out_byte(VGA_SEQ_ADDR, i);
-		out_byte(VGA_SEQ_DATA, s[GFX_N_MISC + i]);
-	}
-
-	for (i = 0; i < GFX_N_CRTC; i++) {
-		out_byte(VGA_CRTC_ADDR, i);
-		out_byte(VGA_CRTC_DATA, s[GFX_N_MISC + GFX_N_SEQ + i]);
-	}
-
-	for (i = 0; i < GFX_N_GC; i++) {
-		out_byte(VGA_GC_ADDR, i);
-		out_byte(VGA_GC_DATA, s[GFX_N_MISC + GFX_N_SEQ + GFX_N_CRTC + i]);
-	}
-
-	/* Attribute Controller: reset flip-flop, then write (addr, data) pairs. */
-	in_byte(VGA_AC_RDY);
-	for (i = 0; i < GFX_N_AC; i++) {
-		out_byte(VGA_AC_ADDR, i);
-		out_byte(VGA_AC_ADDR,
-			 s[GFX_N_MISC + GFX_N_SEQ + GFX_N_CRTC + GFX_N_GC + i]);
-	}
-}
-
-/*****************************************************************************
- *                                vga_write_mode13
- *****************************************************************************
- * Program the VGA into mode 13h from a register table. The caller should
- * disable interrupts around this routine.
- *****************************************************************************/
-PRIVATE void vga_write_mode13(void)
-{
-	const u8 * r = gfx_mode13h;
-	int i;
-
-	/* Misc Output Register. */
-	out_byte(VGA_MISC_W, *r++);
-
-	/* Sequencer. */
-	for (i = 0; i < GFX_N_SEQ; i++) {
-		out_byte(VGA_SEQ_ADDR, i);
-		out_byte(VGA_SEQ_DATA, *r++);
-	}
-
-	/* CRTC. */
-	for (i = 0; i < GFX_N_CRTC; i++) {
-		out_byte(VGA_CRTC_ADDR, i);
-		out_byte(VGA_CRTC_DATA, *r++);
-	}
-
-	/* Graphics Controller. */
-	for (i = 0; i < GFX_N_GC; i++) {
-		out_byte(VGA_GC_ADDR, i);
-		out_byte(VGA_GC_DATA, *r++);
-	}
-
-	/* Attribute Controller: reset flip-flop, then write (addr, data) pairs. */
-	in_byte(VGA_AC_RDY);
-	for (i = 0; i < GFX_N_AC; i++) {
-		out_byte(VGA_AC_ADDR, i);
-		out_byte(VGA_AC_ADDR, *r++);
-	}
+	memcpy((void *)GFX_FB_BASE, vga_framebuffer, GFX_FB_BYTES);
 }
 
 
@@ -361,14 +201,14 @@ PRIVATE void vga_write_mode13(void)
 
 PRIVATE void gfx_clear(u8 color)
 {
-	memset(gfx_buf, color, GFX_FB_BYTES);
+	memset(vga_framebuffer, color, GFX_FB_BYTES);
 }
 
 PRIVATE void gfx_putpixel(int x, int y, u8 color)
 {
 	if (x < 0 || x >= GFX_FB_W || y < 0 || y >= GFX_FB_H)
 		return;
-	gfx_buf[y * GFX_FB_W + x] = color;
+	vga_framebuffer[y * GFX_FB_W + x] = color;
 }
 
 PRIVATE void gfx_hline(int x1, int x2, int y, u8 color)
@@ -380,7 +220,7 @@ PRIVATE void gfx_hline(int x1, int x2, int y, u8 color)
 	if (x1 < 0) x1 = 0;
 	if (x2 >= GFX_FB_W) x2 = GFX_FB_W - 1;
 	for (x = x1; x <= x2; x++)
-		gfx_buf[y * GFX_FB_W + x] = color;
+		vga_framebuffer[y * GFX_FB_W + x] = color;
 }
 
 PRIVATE void gfx_vline(int x, int y1, int y2, u8 color)
@@ -392,7 +232,7 @@ PRIVATE void gfx_vline(int x, int y1, int y2, u8 color)
 	if (y1 < 0) y1 = 0;
 	if (y2 >= GFX_FB_H) y2 = GFX_FB_H - 1;
 	for (y = y1; y <= y2; y++)
-		gfx_buf[y * GFX_FB_W + x] = color;
+		vga_framebuffer[y * GFX_FB_W + x] = color;
 }
 
 PRIVATE void gfx_fill_rect(int x1, int y1, int x2, int y2, u8 color)
@@ -406,7 +246,7 @@ PRIVATE void gfx_fill_rect(int x1, int y1, int x2, int y2, u8 color)
 	if (y2 >= GFX_FB_H) y2 = GFX_FB_H - 1;
 	for (y = y1; y <= y2; y++)
 		for (x = x1; x <= x2; x++)
-			gfx_buf[y * GFX_FB_W + x] = color;
+			vga_framebuffer[y * GFX_FB_W + x] = color;
 }
 
 PRIVATE void gfx_circle(int cx, int cy, int r, u8 color)
@@ -462,7 +302,7 @@ PRIVATE void gfx_draw_pattern(void)
 	/* Vertical colour bars (16 bars, palette indices 0..15). */
 	for (y = 0; y < GFX_FB_H; y++)
 		for (x = 0; x < GFX_FB_W; x++)
-			gfx_buf[y * GFX_FB_W + x] = (x / 20) % 16;
+			vga_framebuffer[y * GFX_FB_W + x] = (x / 20) % 16;
 
 	/* Shapes in the upper band only (y < 150). */
 	gfx_fill_circle(80,  65, 30, 15);	/* white disc   */

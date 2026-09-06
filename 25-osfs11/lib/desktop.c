@@ -26,14 +26,15 @@
  * Ask TASK_DESKTOP to start the desktop environment. The calling process
  * sleeps until TASK_DESKTOP replies (after the desktop exits or ESC is pressed).
  *
- * @return 0 on success.
+ * @return 0 on success, -1 if the VGA device is busy or the reply is invalid.
  *****************************************************************************/
 PUBLIC int desktop_start(void)
 {
 	MESSAGE msg;
+	memset(&msg, 0, sizeof(msg));
 	msg.type = DESKTOP_START;
 
 	send_recv(BOTH, TASK_DESKTOP, &msg);
 
-	return 0;
+	return msg.type == DESKTOP_DONE ? msg.RETVAL : -1;
 }
