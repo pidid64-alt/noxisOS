@@ -174,9 +174,12 @@ void scheduler_tick(registers_t *r) {
     }
 
     if (next < 0) {
-        /* Nothing else runnable: keep the kernel/idle task (slot 0) on CPU. */
-        if (current_task == 0 && current_task < MAX_TASKS)
-            tasks[0].state = TASK_RUNNING;
+        /* Nothing else runnable: whoever was on the CPU keeps running.
+         * Step 1 above demoted it to READY, so put it back to RUNNING --
+         * otherwise a lone task would sit on the CPU marked READY and
+         * task_count()/TASKS would over-report the number of runnable tasks. */
+        if (current_task >= 0 && current_task < MAX_TASKS)
+            tasks[current_task].state = TASK_RUNNING;
         return;
     }
 

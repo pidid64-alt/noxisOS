@@ -23,6 +23,7 @@
 #include "global.h"
 #include "proto.h"
 #include "wm.h"
+#include "wm_font.h"
 
 /* Simple 8x11 cursor bitmap (arrow pointer) */
 PRIVATE const u8 cursor_bitmap[WM_CURSOR_HEIGHT] = {
@@ -90,22 +91,47 @@ PRIVATE void wm_fill_rect(u8 *fb, int x1, int y1, int x2, int y2, u8 color)
 
 PRIVATE void wm_draw_char(u8 *fb, int x, int y, char ch, u8 color)
 {
-	/* Simple 8x8 character rendering - just draw a placeholder box for now */
-	int i, j;
-	for (i = 0; i < 8; i++)
-		for (j = 0; j < 6; j++)
-			if ((i == 0 || i == 7 || j == 0 || j == 5) && ch != ' ')
-				wm_putpixel(fb, x + j, y + i, color);
+	/* 8x16 glyph from the shared public-domain font (kernel/wm_font.h).
+	 * Row bit 7 is the leftmost pixel. Anything outside 32..126 (or the
+	 * space glyph, which is all-zero) simply paints the background, which
+	 * is what the previous "draw a hollow box" placeholder could not do. */
+	const u8 *g;
+	int ry, rx;
+	unsigned char c = (unsigned char)ch;
+
+	if (c < WM_FONT_FIRST || c > WM_FONT_LAST)
+		return;
+
+	g = wm_font8x16[c - WM_FONT_FIRST];
+
+	for (ry = 0; ry < WM_FONT_H; ry++)
+		for (rx = 0; rx < WM_FONT_W; rx++)
+			if (g[ry] & (0x80 >> rx))
+				wm_putpixel(fb, x + rx, y + ry, color);
 }
 
-PRIVATE void wm_draw_text(u8 *fb, int x, int y, const char *text, u8 color)
+/*
+ * Render `text' at (x, y) in `color'.
+ *
+ * `max_px' is a hard clip width in pixels: glyphs that would not fit inside
+ * it are not drawn at all. Titles are drawn inside the title bar, so without
+ * this the text ran off the right edge of the window and over its neighbours.
+ */
+PRIVATE void wm_draw_text(u8 *fb, int x, int y, const char *text, u8 color,
+                          int max_px)
 {
 	int i = 0;
-	while (text[i] && i < 40) {
-		wm_draw_char(fb, x + i * 6, y, text[i], color);
+
+	while (text[i]) {
+		if ((i + 1) * WM_FONT_W > max_px)
+			break;
+		wm_draw_char(fb, x + i * WM_FONT_W, y, text[i], color);
 		i++;
 	}
 }
+
+/* wm_restack is defined further down, next to wm_focus_window. */
+PRIVATE void wm_restack(DESKTOP *desk, int front);
 
 /*****************************************************************************
  *                                wm_init
@@ -165,7 +191,10 @@ PUBLIC int wm_create_window(DESKTOP *desk, int x, int y, int w, int h,
 	desk->windows[i].width = w;
 	desk->windows[i].height = h;
 	desk->windows[i].state = WM_WINDOW_NORMAL;
-	desk->windows[i].z_order = i + 1;
+	/* New window lands on top; wm_restack keeps every z_order inside
+	 * 1..WM_MAX_WINDOWS (slot indices would collide once a slot is reused
+	 * after wm_close_window). */
+	wm_restack(desk, i);
 
 	/* Copy title */
 	int j = 0;
@@ -189,9 +218,13 @@ PUBLIC void wm_close_window(DESKTOP *desk, int win_id)
 		return;
 
 	desk->windows[win_id].state = WM_WINDOW_CLOSED;
+	desk->windows[win_id].z_order = 0;
 
 	if (desk->active_window == win_id)
 		desk->active_window = -1;
+
+	/* Close the gap so the remaining z_orders stay 1..N. */
+	wm_restack(desk, -1);
 }
 
 /*****************************************************************************
@@ -248,14 +281,20 @@ PUBLIC void wm_draw_window(DESKTOP *desk, int win_id)
 	             x + w - WM_BORDER_WIDTH - 1,
 	             y + WM_TITLE_HEIGHT - 1, title_color);
 
-	/* Draw title text */
-	wm_draw_text(fb, x + WM_BORDER_WIDTH + 4, y + WM_BORDER_WIDTH + 2,
-	             win->title, WM_COLOR_TITLE_TEXT);
+	/* Draw title text, clipped so it can never leave the title bar */
+	wm_draw_text(fb, x + WM_BORDER_WIDTH + 2, y + WM_BORDER_WIDTH,
+	             win->title, WM_COLOR_TITLE_TEXT,
+	             w - 2 * WM_BORDER_WIDTH - 4);
 
 	/* Draw content area */
 	wm_fill_rect(fb, x + WM_BORDER_WIDTH, y + WM_TITLE_HEIGHT,
 	             x + w - WM_BORDER_WIDTH - 1,
 	             y + h - WM_BORDER_WIDTH - 1, WM_COLOR_WINDOW_BG);
+
+	/* Bevel: a light inner edge on the top and left of the border, so
+	 * overlapping windows are still distinguishable where they touch. */
+	wm_hline(fb, x + 1, x + w - 2, y + 1, WM_COLOR_WINDOW_BG);
+	wm_vline(fb, x + 1, y + 1, y + h - 2, WM_COLOR_WINDOW_BG);
 }
 
 /*****************************************************************************
@@ -332,31 +371,94 @@ PUBLIC int wm_hit_test(DESKTOP *desk, int x, int y)
 }
 
 /*****************************************************************************
+ *                                wm_restack
+ *****************************************************************************
+ * Re-number the z_order of every NORMAL window so the values are exactly
+ * 1..N, preserving their current relative stacking, and put `front' (>= 0)
+ * on top.
+ *
+ * This matters: the renderer walks z = 1..WM_MAX_WINDOWS, so the old
+ * "z_order = max_z + 1" grew without bound and after a handful of clicks the
+ * focused window's z_order exceeded WM_MAX_WINDOWS and it simply stopped
+ * being drawn -- the desktop looked frozen with a window missing.
+ *****************************************************************************/
+PRIVATE void wm_restack(DESKTOP *desk, int front)
+{
+	int order[WM_MAX_WINDOWS];
+	int n = 0, i, j;
+
+	if (front < 0 || front >= WM_MAX_WINDOWS ||
+	    desk->windows[front].state != WM_WINDOW_NORMAL)
+		front = -1;
+
+	for (i = 0; i < WM_MAX_WINDOWS; i++)
+		if (i != front && desk->windows[i].state == WM_WINDOW_NORMAL)
+			order[n++] = i;
+
+	/* Insertion sort by the current z_order (N <= WM_MAX_WINDOWS == 8). */
+	for (i = 1; i < n; i++) {
+		int key = order[i];
+		int kz = desk->windows[key].z_order;
+		for (j = i - 1; j >= 0 && desk->windows[order[j]].z_order > kz; j--)
+			order[j + 1] = order[j];
+		order[j + 1] = key;
+	}
+
+	for (i = 0; i < n; i++)
+		desk->windows[order[i]].z_order = i + 1;
+
+	if (front >= 0)
+		desk->windows[front].z_order = n + 1;
+}
+
+/*****************************************************************************
  *                                wm_focus_window
  *****************************************************************************
  * Bring a window to front and give it focus.
  *****************************************************************************/
 PUBLIC void wm_focus_window(DESKTOP *desk, int win_id)
 {
-	int i, max_z = 0;
-
 	if (win_id < 0 || win_id >= WM_MAX_WINDOWS)
 		return;
 
 	if (desk->windows[win_id].state != WM_WINDOW_NORMAL)
 		return;
 
-	/* Find max z-order */
-	for (i = 0; i < WM_MAX_WINDOWS; i++) {
-		if (desk->windows[i].state == WM_WINDOW_NORMAL) {
-			if (desk->windows[i].z_order > max_z)
-				max_z = desk->windows[i].z_order;
-		}
+	wm_restack(desk, win_id);
+	desk->active_window = win_id;
+}
+
+/*****************************************************************************
+ *                                wm_paint_all
+ *****************************************************************************
+ * Repaint everything: desktop background, then every NORMAL window back to
+ * front, then the cursor. Windows are sorted here rather than by walking
+ * z = 1..WM_MAX_WINDOWS, so the paint order stays correct even if a z_order
+ * ever ends up out of that range.
+ *****************************************************************************/
+PUBLIC void wm_paint_all(DESKTOP *desk)
+{
+	int order[WM_MAX_WINDOWS];
+	int n = 0, i, j;
+
+	wm_draw_desktop(desk);
+
+	for (i = 0; i < WM_MAX_WINDOWS; i++)
+		if (desk->windows[i].state == WM_WINDOW_NORMAL)
+			order[n++] = i;
+
+	for (i = 1; i < n; i++) {
+		int key = order[i];
+		int kz = desk->windows[key].z_order;
+		for (j = i - 1; j >= 0 && desk->windows[order[j]].z_order > kz; j--)
+			order[j + 1] = order[j];
+		order[j + 1] = key;
 	}
 
-	/* Bring to front */
-	desk->windows[win_id].z_order = max_z + 1;
-	desk->active_window = win_id;
+	for (i = 0; i < n; i++)
+		wm_draw_window(desk, order[i]);
+
+	wm_draw_cursor(desk);
 }
 
 /*****************************************************************************

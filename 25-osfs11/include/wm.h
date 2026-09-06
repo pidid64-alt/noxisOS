@@ -18,10 +18,10 @@
 
 /* Window manager constants */
 #define WM_MAX_WINDOWS      8
-#define WM_TITLE_HEIGHT     12
+#define WM_TITLE_HEIGHT     18   /* fits one 8x16 glyph row (see kernel/wm_font.h) */
 #define WM_BORDER_WIDTH     2
 #define WM_MIN_WIDTH        60
-#define WM_MIN_HEIGHT       40
+#define WM_MIN_HEIGHT       48   /* >= TITLE_HEIGHT + 2*BORDER + a usable client area */
 
 /* Window states */
 #define WM_WINDOW_CLOSED    0
@@ -67,6 +67,7 @@ PUBLIC int wm_create_window(DESKTOP *desk, int x, int y, int w, int h, const cha
 PUBLIC void wm_close_window(DESKTOP *desk, int win_id);
 PUBLIC void wm_draw_desktop(DESKTOP *desk);
 PUBLIC void wm_draw_window(DESKTOP *desk, int win_id);
+PUBLIC void wm_paint_all(DESKTOP *desk);
 PUBLIC void wm_draw_cursor(DESKTOP *desk);
 PUBLIC void wm_update_mouse(DESKTOP *desk, int dx, int dy, int buttons);
 PUBLIC void wm_handle_click(DESKTOP *desk, int x, int y);

@@ -131,6 +131,16 @@ PUBLIC void mouse_init(void)
 	mouse_write(MOUSE_CMD_ENABLE);
 	mouse_read(); /* ACK */
 
+	/* Drain anything the device queued while we were reconfiguring it
+	 * (the 0xFF reset makes it emit 0xAA + a device ID, and the keyboard
+	 * can also leave bytes in the shared port 0x60 buffer). Starting the
+	 * stream clean is what keeps the 3-byte packet framing aligned. */
+	{
+		int guard = 16;
+		while (guard-- > 0 && (in_byte(MOUSE_STATUS) & 0x21) == 0x21)
+			in_byte(MOUSE_PORT);
+	}
+
 	/* Reset packet state */
 	mouse_cycle = 0;
 
@@ -150,17 +160,26 @@ PUBLIC void mouse_init(void)
 PUBLIC void mouse_handler(int irq)
 {
 	u8 status = in_byte(MOUSE_STATUS);
+	u8 data;
+	int dx, dy;
 
-	/* Check if data is from mouse */
+	/* Port 0x60 is shared with the keyboard. If the pending byte is not
+	 * from the auxiliary device (status bit 5 clear) it belongs to IRQ1's
+	 * keyboard handler -- reading it here would eat a keystroke, so leave
+	 * it in the buffer and return. */
 	if (!(status & 0x20))
 		return;
 
-	u8 data = in_byte(MOUSE_PORT);
+	data = in_byte(MOUSE_PORT);
 
 	/* Build 3-byte packet */
 	switch (mouse_cycle) {
 	case 0:
-		/* First byte: must have bit 3 set (always 1 flag) */
+		/* First byte: must have bit 3 set (always 1 flag). Anything
+		 * else means we lost a byte somewhere (interrupts are masked
+		 * while the VGA mode switch runs) -- drop it and stay in
+		 * cycle 0 rather than latching a mid-packet byte as a header,
+		 * which would desynchronise the stream for good. */
 		if (data & MOUSE_V_BIT) {
 			mouse_packet[0] = data;
 			mouse_cycle = 1;
@@ -174,12 +193,18 @@ PUBLIC void mouse_handler(int irq)
 		mouse_packet[2] = data;
 		mouse_cycle = 0;
 
+		/* X/Y overflow (bits 6/7 of the header): the deltas are not
+		 * representable, so the packet is bogus. Drop it instead of
+		 * teleporting the cursor. */
+		if (mouse_packet[0] & 0xC0)
+			break;
+
 		/* Process complete packet */
 		mouse_buttons = mouse_packet[0] & 0x07;
 
 		/* Extract movement (with sign extension) */
-		int dx = mouse_packet[1];
-		int dy = mouse_packet[2];
+		dx = mouse_packet[1];
+		dy = mouse_packet[2];
 
 		/* Sign extend if needed */
 		if (mouse_packet[0] & 0x10)
