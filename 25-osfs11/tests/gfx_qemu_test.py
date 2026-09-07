@@ -20,7 +20,7 @@ captured with `screendump` against a VNC display backend rather than
 `pmemsave`. The captured image is a PPM (P6) scaled by QEMU; we scale the
 expected 320x200 pattern up to the captured size.
 
-NOTE (2026-09-07): STALE. The gfx demo now paints an 800x600 VBE linear
+NOTE (2026-09-07): STALE. The gfx demo now paints an 800x600 banked VBE
 framebuffer (see include/sys/const.h GFX_FB_*, kernel/vga.c DISPI mode set)
 instead of 320x200 mode 13h, so the sampled pattern/geometry and the
 text-mode restoration expectations below must be re-derived under QEMU

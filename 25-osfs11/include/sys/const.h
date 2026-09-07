@@ -109,8 +109,8 @@
  * VGA mode that is where the text-mode frame and the BIOS text font live. */
 #define	GFX_FB_BASE	0xA0000	/* VGA window base (text/font access)  */
 #define	GFX_FB_SIZE	0x75300	/* 800 * 600 = 480000 bytes            */
-#define	GFX_FB_W	800	/* desktop width  (VBE linear mode)     */
-#define	GFX_FB_H	600	/* desktop height (VBE linear mode)     */
+#define	GFX_FB_W	800	/* desktop width  (VBE 8-bit mode)     */
+#define	GFX_FB_H	600	/* desktop height (VBE 8-bit mode)     */
 #define	GFX_FB_BYTES	(GFX_FB_W * GFX_FB_H)	/* 480000             */
 #define	GFX_PITCH	800	/* bytes per scanline                   */
 /* The double buffer cannot live in the kernel image (the kernel must stay
@@ -118,10 +118,9 @@
  * at 3 MB: above the paging tables (0x100000+) and far below PROCS_BASE
  * (10 MB) where forked user processes live. */
 #define	GFX_FB_RAM	0x300000
-/* Bochs/QEMU VBE linear framebuffer of the emulated "std" VGA card. The
- * loader identity-maps RAM only, so vga_map_lfb() adds a 4 MB page-table
- * entry for this window at boot (see kernel/vga.c). */
-#define	GFX_FB_LFB	0xE0000000
+/* Frames reach the device through the stable banked VGA aperture at
+ * GFX_FB_BASE. Do not hard-code the PCI linear-framebuffer address: QEMU and
+ * Bochs may assign it differently for each machine layout. */
 
 /* CMOS */
 #define CLK_ELE		0x70	/* CMOS RAM address register port (write only)

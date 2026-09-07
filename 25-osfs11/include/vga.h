@@ -9,12 +9,11 @@
  * the desktop task; only one of them may own the screen at a time. */
 extern u8 *vga_framebuffer;
 
-PUBLIC void vga_map_lfb(void);   /* map the VBE LFB into the page tables (ring 0) */
 PUBLIC int vga_enter_graphics(void); /* 0 on success, -1 if already owned */
 PUBLIC void vga_leave_graphics(void);
 PUBLIC int vga_graphics_active(void);
 
-/* Copy the double buffer to the VBE linear framebuffer (one full frame). */
+/* Copy the double buffer through the banked VBE aperture (one full frame). */
 PUBLIC void vga_blit(void);
 
 #endif /* _NOXIS_VGA_H_ */

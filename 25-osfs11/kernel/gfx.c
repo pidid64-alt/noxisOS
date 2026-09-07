@@ -5,7 +5,7 @@
  *
  * This is the first step towards a graphical environment: it proves the
  * pixel pipeline (switch VGA to a graphics mode without BIOS, drive the
- * linear framebuffer, draw primitives, run a stable animation loop).
+ * banked framebuffer, draw primitives, run a stable animation loop).
  *
  * The task lives in an infinite message loop. A user process (the `demo'
  * command) sends a GFX_RUN message; TASK_GFX switches to 800x600x8, renders
@@ -187,7 +187,7 @@ PRIVATE void gfx_sync_frame(int * last)
 /*****************************************************************************
  *                                gfx_present
  *****************************************************************************
- * Copy the double buffer into the VBE linear framebuffer.
+ * Copy the double buffer through the banked VBE aperture.
  *****************************************************************************/
 PRIVATE void gfx_present(void)
 {

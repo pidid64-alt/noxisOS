@@ -1,15 +1,12 @@
 /* Shared VGA mode switching for TASK_GFX and TASK_DESKTOP.
  *
- * The desktop/demo run in 800x600x8 with a linear framebuffer, entered
- * through the Bochs/QEMU VBE (DISPI) interface: no BIOS call is needed in
- * protected mode -- just two 16-bit ports (0x1CE/0x1CF). The text-mode
- * state (indexed registers, three console pages, the BIOS font and the DAC)
- * is saved on entry and restored on exit so the text consoles keep working
- * after the GUI closes.
- *
- * The linear framebuffer lives at GFX_FB_LFB (0xE0000000 on the emulated
- * "std" VGA card). RAM is identity-mapped by the loader, so vga_map_lfb()
- * adds one 4 MB page-table entry for that window at boot (ring 0 only).
+ * The desktop/demo run in 800x600x8 through the Bochs/QEMU VBE (DISPI)
+ * interface: no BIOS call is needed in protected mode, only the two DISPI
+ * ports (0x1CE/0x1CF). Frames are copied through the standard 64 KB banked
+ * VGA aperture at 0xA0000. Unlike a hard-coded linear-framebuffer address,
+ * that aperture is stable across QEMU/Bochs versions and machine layouts.
+ * The text-mode state (indexed registers, three console pages, the BIOS font
+ * and the DAC) is saved on entry and restored on exit.
  */
 #include "type.h"
 #include "stdio.h"
@@ -68,10 +65,11 @@ PRIVATE const u8 colors16[16 * 3] = {
 #define VBE_DISPI_INDEX_YRES     0x2
 #define VBE_DISPI_INDEX_BPP      0x3
 #define VBE_DISPI_INDEX_ENABLE   0x4
+#define VBE_DISPI_INDEX_BANK     0x5
 #define VBE_DISPI_DISABLED       0x00
 #define VBE_DISPI_ENABLED        0x01
-#define VBE_DISPI_LFB_ENABLED    0x40
 #define VBE_DISPI_BPP_8          8
+#define VBE_BANK_BYTES           0x10000
 
 PRIVATE void vbe_write(u16 index, u16 value)
 {
@@ -79,15 +77,17 @@ PRIVATE void vbe_write(u16 index, u16 value)
 	out_word(VBE_DISPI_IOPORT_DATA, value);
 }
 
-/* Switch the card to GFX_FB_W x GFX_FB_H, 8 bpp, linear framebuffer. */
+/* Switch the card to GFX_FB_W x GFX_FB_H, 8 bpp. Keep LFB disabled: the
+ * physical address of the PCI framebuffer is assigned by the emulator and
+ * is not necessarily 0xE0000000. The banked A0000 aperture is portable. */
 PRIVATE void vbe_enter_mode(void)
 {
 	vbe_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
 	vbe_write(VBE_DISPI_INDEX_XRES, GFX_FB_W);
 	vbe_write(VBE_DISPI_INDEX_YRES, GFX_FB_H);
 	vbe_write(VBE_DISPI_INDEX_BPP, VBE_DISPI_BPP_8);
-	vbe_write(VBE_DISPI_INDEX_ENABLE,
-	          VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+	vbe_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_ENABLED);
+	vbe_write(VBE_DISPI_INDEX_BANK, 0);
 }
 
 /* Leave the VBE mode: the card falls back to the standard VGA mode whose
@@ -97,37 +97,23 @@ PRIVATE void vbe_leave_mode(void)
 	vbe_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
 }
 
-/* The loader identity-maps RAM but not the VBE linear framebuffer window at
- * GFX_FB_LFB (0xE0000000). Add one 4 MB big-page entry to the page
- * directory -- the loader keeps it at 0x100000 -- and enable CR4.PSE so the
- * PS bit is honoured. Ring 0 only; call once at boot (kernel_main). */
-#define VBE_LFB_PDE_ADDR (0x100000 + ((GFX_FB_LFB >> 22) * 4))
-
-PUBLIC void vga_map_lfb(void)
-{
-#if defined(__i386__)
-	disable_int();
-	__asm__ __volatile__("movl %%cr4, %%eax\n\t"
-	                     "orl $0x10, %%eax\n\t"  /* CR4.PSE */
-	                     "movl %%eax, %%cr4"
-	                     ::: "eax", "memory");
-	/* P | RW | US | PS: present, writable, user, 4 MB page. */
-	*(u32 *)VBE_LFB_PDE_ADDR = GFX_FB_LFB | 0x87;
-	/* Flush the TLB so the new PDE takes effect. */
-	__asm__ __volatile__("movl %%cr3, %%eax\n\t"
-	                     "movl %%eax, %%cr3"
-	                     ::: "eax", "memory");
-	enable_int();
-#else
-	/* Host build (unit tests): no CR4/CR3 access on the test machine.
-	 * The real mapping is ring-0-only and happens once in kernel_main. */
-	(void)VBE_LFB_PDE_ADDR;
-#endif
-}
-
 PUBLIC void vga_blit(void)
 {
-	memcpy((void *)GFX_FB_LFB, vga_framebuffer, GFX_FB_BYTES);
+	u32 offset = 0;
+	u16 bank = 0;
+
+	/* DISPI bank numbers select consecutive 64 KB chunks at A0000. The last
+	 * bank is partial (800*600 is not a multiple of 64 KB). */
+	while (offset < GFX_FB_BYTES) {
+		u32 count = GFX_FB_BYTES - offset;
+		if (count > VBE_BANK_BYTES)
+			count = VBE_BANK_BYTES;
+		vbe_write(VBE_DISPI_INDEX_BANK, bank++);
+		memcpy((void *)GFX_FB_BASE, vga_framebuffer + offset, count);
+		offset += count;
+	}
+	/* Leave bank zero selected for predictable VGA state and tests. */
+	vbe_write(VBE_DISPI_INDEX_BANK, 0);
 }
 
 PRIVATE void vga_save_regs(u8 *s)
@@ -230,7 +216,7 @@ PUBLIC int vga_enter_graphics(void)
 	vga_font_access();
 	memcpy(saved_font, (void *)GFX_FB_BASE, VGA_FONT_BYTES);
 
-	/* 800x600x8 with a linear framebuffer (Bochs/QEMU VBE). */
+	/* 800x600x8 through the banked Bochs/QEMU VBE aperture. */
 	vbe_enter_mode();
 	out_byte(VGA_DAC_MASK, 0xFF);
 	out_byte(VGA_DAC_WRITE, 0);
