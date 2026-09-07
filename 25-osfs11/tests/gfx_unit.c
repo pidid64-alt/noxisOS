@@ -93,7 +93,7 @@ static int failures = 0;
 	do { if (!(exp)) { printf("ASSERT FAILED: %s\n", #exp); failures++; } } while (0)
 
 /* Real hardware keeps the double buffer in free RAM and blits it to the
- * VBE linear framebuffer. Here both are plain BSS buffers so the drawing
+ * VBE framebuffer. Here both are plain BSS buffers so the drawing
  * primitives and vga_blit() can be exercised. */
 static u8	fb_store[GFX_FB_BYTES];	/* the double buffer */
 u8 *vga_framebuffer = fb_store;

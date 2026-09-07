@@ -128,10 +128,6 @@ PUBLIC int kernel_main()
         init_keyboard();
 	mouse_init();
 
-	/* The loader identity-maps RAM only. Map the VBE linear framebuffer
-	 * (GFX_FB_LFB) once, while we are still in ring 0. */
-	vga_map_lfb();
-
 	restart();
 
 	while(1){}

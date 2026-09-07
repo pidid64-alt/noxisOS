@@ -804,7 +804,7 @@ PRIVATE int desktop_poll_esc(void)
 /*****************************************************************************
  *                                desktop_present
  *****************************************************************************
- * Copy framebuffer to the VBE linear framebuffer.
+ * Copy the framebuffer through the banked VBE aperture.
  *****************************************************************************/
 PRIVATE void desktop_present(void)
 {

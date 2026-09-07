@@ -1,8 +1,8 @@
 /* Exercise the real VGA driver against an indexed-register model, not a
  * flat port array: AC flip-flops and CRTC protection caused the black
- * screen. The driver now enters graphics through the Bochs/QEMU VBE (DISPI)
- * interface -- two 16-bit I/O ports -- so the model also tracks the VBE
- * registers the driver programs.
+ * screen. The driver enters graphics through the Bochs/QEMU VBE (DISPI)
+ * interface and presents through portable 64 KB banks, so the model tracks
+ * both the VBE registers and every bank copied by the driver.
  * Build with -iquote tests/stubs, without the freestanding libc headers. */
 #include <stdio.h>
 #include <stdint.h>
@@ -32,14 +32,13 @@ typedef unsigned int u32;
 #define VGA_AC_ADDR 0x3C0
 #define VGA_AC_RDY 0x3DA
 
-/* The driver stores the double buffer at GFX_FB_RAM and blits to the VBE
- * linear framebuffer at GFX_FB_LFB. Neither address is dereferenced by the
- * enter/leave paths under test, so plain constants suffice. */
-static u8 vga_ram[GFX_FB_BYTES];
+/* The driver stores the double buffer at GFX_FB_RAM and presents it through
+ * the 64 KB VGA bank window at GFX_FB_BASE. The model below redirects banked
+ * copies into vbe_framebuffer so a complete frame can be verified. */
+static u8 vga_ram[GFX_FB_BYTES], vbe_framebuffer[GFX_FB_BYTES];
 #define GFX_FB_RAM ((uintptr_t)vga_ram)
-#define GFX_FB_LFB 0xE0000000u
 
-static u8 text_memory[V_MEM_SIZE], font_memory[256 * 32];
+static u8 text_memory[V_MEM_SIZE], font_memory[0x10000];
 #define V_MEM_BASE ((uintptr_t)text_memory)
 #define GFX_FB_BASE ((uintptr_t)font_memory)
 static u8 seq[5], crtc[25], gc[9], ac[21], palette[768], misc, dac_mask;
@@ -118,6 +117,12 @@ static void out_word(u16 port, u16 value)
 }
 static void *checked_memcpy(void *dest, const void *src, size_t count)
 {
+	if (dest == font_memory && (vbe_reg[0x4] & 1)) {
+		size_t offset = (size_t)vbe_reg[0x5] * 0x10000;
+		if (offset + count <= sizeof(vbe_framebuffer))
+			memcpy(vbe_framebuffer + offset, src, count);
+		return dest;
+	}
 	if (dest == font_memory || src == font_memory) {
 		if (seq[2] != 4 || seq[4] != 6 || gc[4] != 2 || gc[5] != 0 ||
 		    gc[6] != 4 || (crtc[0x14] & 0x40) || interrupts)
@@ -173,8 +178,15 @@ int main(void)
 		CHECK(vbe_reg[0x2] == GFX_FB_H,
 		      "VBE vertical resolution programmed");
 		CHECK(vbe_reg[0x3] == 8, "VBE depth is 8 bpp");
-		CHECK((vbe_reg[0x4] & 0x01) && (vbe_reg[0x4] & 0x40),
-		      "VBE enabled with the linear framebuffer");
+		CHECK((vbe_reg[0x4] & 0x01) && !(vbe_reg[0x4] & 0x40),
+		      "VBE enabled with the portable banked aperture");
+		for (i = 0; i < GFX_FB_BYTES; i++)
+			vga_ram[i] = (u8)(i * 13 + cycle);
+		memset(vbe_framebuffer, 0, sizeof(vbe_framebuffer));
+		vga_blit();
+		CHECK(!memcmp(vbe_framebuffer, vga_ram, sizeof(vga_ram)),
+		      "all framebuffer banks are presented");
+		CHECK(vbe_reg[0x5] == 0, "blit restores bank zero");
 		CHECK(!memcmp(saved_regs, original, sizeof(original)),
 		      "save all indexed registers without corrupting AC");
 		/* Entering VBE mode must not touch the text-mode CRTC (the old
@@ -207,7 +219,7 @@ int main(void)
 		      "text attribute palette restored");
 		CHECK(!memcmp(text_memory, original_text, sizeof(text_memory)),
 		      "all three text consoles restored");
-		CHECK(!memcmp(font_memory, original_font, sizeof(font_memory)),
+		CHECK(!memcmp(font_memory, original_font, VGA_FONT_BYTES),
 		      "BIOS font restored");
 		CHECK(!bad_font_access,
 		      "font copied only with text/plane-2 addressing and IRQs masked");
