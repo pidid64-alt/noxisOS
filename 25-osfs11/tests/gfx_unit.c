@@ -12,8 +12,8 @@
  *      guards in tests/stubs/ (pass -iquote tests/stubs; do NOT pass
  *      -I include, or the real headers collide with these mirrors).
  *
- * Unlike on real hardware, GFX_FB_BASE points at a normal BSS buffer, so
- * gfx_present() can run and the framebuffer copy is verified too.
+ * Unlike on real hardware, both the double buffer and the blit target are
+ * normal BSS buffers, so the primitives and the framebuffer copy can run.
  */
 #include <stdio.h>
 #include <string.h>
@@ -92,12 +92,14 @@ static int failures = 0;
 #define	assert(exp) \
 	do { if (!(exp)) { printf("ASSERT FAILED: %s\n", #exp); failures++; } } while (0)
 
-/* Real hardware: linear framebuffer at 0xA0000 (unmapped here).
- * Test: redirect to plain memory so gfx_present() can be exercised. */
-static u8	test_fb[GFX_FB_BYTES];
-#define		GFX_FB_BASE	((uintptr_t)test_fb)
+/* Real hardware keeps the double buffer in free RAM and blits it to the
+ * VBE linear framebuffer. Here both are plain BSS buffers so the drawing
+ * primitives and vga_blit() can be exercised. */
+static u8	fb_store[GFX_FB_BYTES];	/* the double buffer */
+u8 *vga_framebuffer = fb_store;
 
-u8 vga_framebuffer[GFX_FB_BYTES];
+static u8	test_fb[GFX_FB_BYTES];	/* fake "hardware" target */
+void vga_blit(void) { memcpy(test_fb, vga_framebuffer, GFX_FB_BYTES); }
 int vga_enter_graphics(void) { return 0; }
 void vga_leave_graphics(void) {}
 
@@ -168,7 +170,7 @@ int main(void)
 	CHECK(vga_framebuffer[100 * GFX_FB_W + 160] == 6, "ball: colour cycles to 6 at frame 5");
 
 	/* === clipping: primitives must not write outside the buffer === */
-	memset(vga_framebuffer, 0xAA, sizeof(vga_framebuffer));	/* sentinel fill */
+	memset(vga_framebuffer, 0xAA, GFX_FB_BYTES);	/* sentinel fill */
 	gfx_putpixel(-1, 0, 1);  gfx_putpixel(0, -1, 1);
 	gfx_putpixel(GFX_FB_W, 0, 1);  gfx_putpixel(0, GFX_FB_H, 1);
 	gfx_hline(-10, GFX_FB_W + 10, -1, 1);		/* row clipped away */
@@ -188,7 +190,7 @@ int main(void)
 	CHECK(clip_bad == 0, "clipping: hline/vline clamp, never wrap or corrupt");
 
 	/* fill_rect clamps to the whole screen */
-	memset(vga_framebuffer, 0xAA, sizeof(vga_framebuffer));
+	memset(vga_framebuffer, 0xAA, GFX_FB_BYTES);
 	gfx_fill_rect(-10, -10, GFX_FB_W + 10, GFX_FB_H + 10, 2);
 	clip_bad = 0;
 	for (int y = 0; y < GFX_FB_H; y++)
@@ -198,7 +200,7 @@ int main(void)
 	CHECK(clip_bad == 0, "clipping: fill_rect clamps to screen bounds");
 
 	/* hline/vline swap unsorted endpoints */
-	memset(vga_framebuffer, 0, sizeof(vga_framebuffer));
+	memset(vga_framebuffer, 0, GFX_FB_BYTES);
 	gfx_hline(50, 10, 7, 3);			/* x1 > x2 */
 	CHECK(vga_framebuffer[7 * GFX_FB_W + 10] == 3 && vga_framebuffer[7 * GFX_FB_W + 50] == 3 &&
 	      vga_framebuffer[7 * GFX_FB_W + 9] == 0 && vga_framebuffer[7 * GFX_FB_W + 51] == 0,

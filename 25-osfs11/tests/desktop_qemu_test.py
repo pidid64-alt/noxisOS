@@ -4,6 +4,13 @@
 Uses QMP over a private Unix socket, no GUI/VNC port or third-party packages.
 -snapshot keeps the IDE image unchanged. Every wait checks an actual outcome;
 boot/exec latency is not mistaken for a successful launch or a frozen screen.
+
+NOTE (2026-09-07): STALE. The desktop now enters 800x600x8 through the
+Bochs/QEMU VBE (DISPI) interface with a linear framebuffer (kernel/vga.c)
+instead of 320x200 mode 13h, and it opens a left-docked \"Files:\" explorer
+next to the TTY window (kernel/desktop.c). The logical 320x200 coordinates,
+TERM_*/BACKGROUND constants and expected capture sizes below must be
+re-derived under QEMU before this harness is used again.
 """
 import argparse
 import json

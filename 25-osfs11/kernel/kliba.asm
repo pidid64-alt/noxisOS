@@ -18,6 +18,7 @@ global	disp_str
 global	disp_color_str
 global	out_byte
 global	in_byte
+global	out_word
 global	enable_irq
 global	disable_irq
 global	enable_int
@@ -111,6 +112,17 @@ out_byte:
 	mov	edx, [esp + 4]		; port
 	mov	al, [esp + 4 + 4]	; value
 	out	dx, al
+	nop	; 一点延迟
+	nop
+	ret
+
+; ========================================================================
+;		   void out_word(u16 port, u16 value);
+; ========================================================================
+out_word:
+	mov	edx, [esp + 4]		; port
+	mov	ax, [esp + 4 + 4]	; value
+	out	dx, ax
 	nop	; 一点延迟
 	nop
 	ret

@@ -4,7 +4,7 @@
  * @brief  Window Manager implementation for noxisOS
  *
  * Implements a minimal desktop environment with window management,
- * rendering, and mouse interaction for VGA mode 13h.
+ * rendering, and mouse interaction for the 800x600 VBE framebuffer.
  *
  * @author noxisOS
  * @date   2026-08-28
@@ -183,8 +183,7 @@ PRIVATE void wm_term_scroll(DESKTOP *desk)
 PUBLIC int wm_term_open(DESKTOP *desk, const char *title)
 {
 	int id = wm_create_window(desk,
-	                          (GFX_FB_W - WM_TERM_WIN_W) / 2,
-	                          (GFX_FB_H - WM_TERM_WIN_H) / 2,
+	                          WM_TERM_WIN_X, WM_TERM_WIN_Y,
 	                          WM_TERM_WIN_W, WM_TERM_WIN_H, title);
 
 	if (id < 0)
@@ -317,6 +316,246 @@ PRIVATE void wm_draw_terminal(DESKTOP *desk, int win_id)
 }
 
 /*****************************************************************************
+ *                                File explorer (Files window)
+ *****************************************************************************
+ * A second kind of window: a list of the files in the root directory (the
+ * Orange'S filesystem is flat, so "explorer" means one scrollable list).
+ * The DESKTOP task owns the filesystem access and fills expl.entries[];
+ * this file only renders the list / the text view and turns mouse clicks
+ * into row selections. Rows are one 8x16 glyph high; the selected row is
+ * highlighted like the title bar.
+ *****************************************************************************/
+
+/* How many whole rows fit into the window's client area (list or view). */
+PRIVATE int wm_expl_visible_rows(DESKTOP *desk)
+{
+	WINDOW *win = &desk->windows[desk->expl.win_id];
+	int client_h = win->height - WM_TITLE_HEIGHT - WM_BORDER_WIDTH
+	               - 2 * WM_EXPL_PAD;
+
+	if (client_h <= 0)
+		return 0;
+	return client_h / WM_TERM_CELL_H;
+}
+
+/*****************************************************************************
+ *                                wm_expl_scroll_to_cursor
+ *****************************************************************************
+ * Make sure the selected row is visible after a cursor move or a click.
+ *****************************************************************************/
+PUBLIC void wm_expl_scroll_to_cursor(DESKTOP *desk)
+{
+	int rows = wm_expl_visible_rows(desk);
+
+	if (rows <= 0)
+		return;
+	if (desk->expl.cursor < desk->expl.scroll)
+		desk->expl.scroll = desk->expl.cursor;
+	if (desk->expl.cursor >= desk->expl.scroll + rows)
+		desk->expl.scroll = desk->expl.cursor - rows + 1;
+}
+
+/*****************************************************************************
+ *                                wm_expl_open
+ *****************************************************************************
+ * Create the Files window, attach it to the explorer state and focus it.
+ *****************************************************************************/
+PUBLIC int wm_expl_open(DESKTOP *desk, int x, int y, int w, int h,
+                        const char *title)
+{
+	int id = wm_create_window(desk, x, y, w, h, title);
+
+	if (id < 0)
+		return -1;
+
+	desk->expl.win_id = id;
+	desk->expl.state = WM_EXPL_LIST;
+	desk->expl.n_entries = 0;
+	desk->expl.cursor = 0;
+	desk->expl.scroll = 0;
+	desk->expl.view_row = 0;
+	desk->expl.view_len = 0;
+	desk->expl.view_name[0] = 0;
+	wm_focus_window(desk, id);
+
+	return id;
+}
+
+/*****************************************************************************
+ *                                wm_draw_expl_line
+ *****************************************************************************
+ * Paint one text row of the explorer in `color' at client text position
+ * (tx, ty). The caller paints the selection background first.
+ *****************************************************************************/
+PRIVATE void wm_draw_expl_line(u8 *fb, int tx, int ty, const char *text,
+                               u8 color, int max_chars)
+{
+	int i = 0;
+
+	while (text[i] && i < max_chars) {
+		wm_draw_char(fb, tx + i * WM_TERM_CELL_W, ty, text[i], color);
+		i++;
+	}
+}
+
+/* Format one list row: the name left-aligned, the size flush right. */
+PRIVATE void wm_expl_format_row(EXPL_ENTRY *e, char *out, int out_sz,
+                                int cols)
+{
+	char sizebuf[12];
+	int sz = e->size, sl = 0, i, pos;
+
+	if (sz <= 0) {
+		sizebuf[sl++] = '-';
+	} else {
+		char tmp[12];
+		int tl = 0;
+		while (sz && tl < 11) {
+			tmp[tl++] = '0' + (sz % 10);
+			sz /= 10;
+		}
+		while (tl)
+			sizebuf[sl++] = tmp[--tl];
+	}
+	sizebuf[sl] = 0;
+
+	int name_len = 0;
+	while (e->name[name_len])
+		name_len++;
+
+	/* The size keeps its own column; the name gets the rest of the row. */
+	int name_cols = cols - sl - 1;      /* one space before the size */
+	if (name_cols < 1)
+		name_cols = 1;
+	if (name_cols + sl + 1 >= out_sz)
+		name_cols = out_sz - sl - 2;
+
+	pos = 0;
+	for (i = 0; i < name_cols && i < name_len && pos < out_sz - 1; i++)
+		out[pos++] = e->name[i];
+	while (pos < out_sz - 1 && pos < name_cols)
+		out[pos++] = ' ';
+	if (pos < out_sz - 1)
+		out[pos++] = ' ';
+	for (i = 0; i < sl && pos < out_sz - 1; i++)
+		out[pos++] = sizebuf[i];
+	out[pos] = 0;
+}
+
+/*****************************************************************************
+ *                                wm_draw_expl_list
+ *****************************************************************************
+ * List mode: every visible entry, the selected one highlighted.
+ *****************************************************************************/
+PRIVATE void wm_draw_expl_list(DESKTOP *desk, WINDOW *win)
+{
+	u8 *fb = desk->framebuffer;
+	int tx = win->x + WM_BORDER_WIDTH + WM_EXPL_PAD;
+	int ty = win->y + WM_TITLE_HEIGHT + WM_EXPL_PAD;
+	int cols = (win->width - 2 * WM_BORDER_WIDTH - 2 * WM_EXPL_PAD)
+	           / WM_TERM_CELL_W;
+	int max_rows = wm_expl_visible_rows(desk);
+	int r;
+
+	if (cols > 40)
+		cols = 40;
+	if (desk->expl.n_entries == 0) {
+		wm_draw_expl_line(fb, tx, ty, "(root is empty)", WM_COLOR_BORDER,
+		                  cols);
+		return;
+	}
+
+	for (r = 0; r < max_rows; r++) {
+		int idx = desk->expl.scroll + r;
+		char rowbuf[64];
+		int selected;
+
+		if (idx >= desk->expl.n_entries)
+			break;
+
+		selected = (idx == desk->expl.cursor);
+		if (selected) {
+			/* Highlight the whole row, then paint white text. */
+			wm_fill_rect(fb, tx - WM_EXPL_PAD, ty + r * WM_TERM_CELL_H,
+			             win->x + win->width - WM_BORDER_WIDTH
+			             - WM_EXPL_PAD,
+			             ty + r * WM_TERM_CELL_H + WM_TERM_CELL_H - 1,
+			             WM_COLOR_EXPL_SEL);
+		}
+
+		wm_expl_format_row(&desk->expl.entries[idx], rowbuf,
+		                   sizeof(rowbuf), cols);
+		wm_draw_expl_line(fb, tx, ty + r * WM_TERM_CELL_H, rowbuf,
+		                  selected ? WM_COLOR_TITLE_TEXT : WM_COLOR_BORDER,
+		                  cols);
+	}
+}
+
+/*****************************************************************************
+ *                                wm_draw_expl_view
+ *****************************************************************************
+ * View mode: show expl.view[] as wrapped text lines starting at view_row.
+ *****************************************************************************/
+PRIVATE void wm_draw_expl_view(DESKTOP *desk, WINDOW *win)
+{
+	u8 *fb = desk->framebuffer;
+	int tx = win->x + WM_BORDER_WIDTH + WM_EXPL_PAD;
+	int ty = win->y + WM_TITLE_HEIGHT + WM_EXPL_PAD;
+	int cols = (win->width - 2 * WM_BORDER_WIDTH - 2 * WM_EXPL_PAD)
+	           / WM_TERM_CELL_W;
+	int max_rows = wm_expl_visible_rows(desk);
+	int first = desk->expl.view_row;
+	int line = 0;           /* current logical line */
+	int col = 0;            /* characters on the current line */
+	int i;
+
+	if (cols > 60)
+		cols = 60;
+
+	if (desk->expl.view_len == 0) {
+		wm_draw_expl_line(fb, tx, ty, "(no text)", WM_COLOR_BORDER, cols);
+		return;
+	}
+
+	for (i = 0; i < desk->expl.view_len; i++) {
+		char ch = desk->expl.view[i];
+
+		if (ch == '\n') {
+			line++;
+			col = 0;
+			continue;
+		}
+
+		/* Paint only the lines inside the window. */
+		if (line >= first && line < first + max_rows)
+			wm_draw_char(fb, tx + col * WM_TERM_CELL_W,
+			             ty + (line - first) * WM_TERM_CELL_H,
+			             ch, WM_COLOR_BORDER);
+
+		col++;
+		if (col >= cols) {      /* wrap long lines */
+			line++;
+			col = 0;
+		}
+	}
+}
+
+/*****************************************************************************
+ *                                wm_draw_explorer
+ *****************************************************************************
+ * Paint the Files window content (list or text view).
+ *****************************************************************************/
+PRIVATE void wm_draw_explorer(DESKTOP *desk, int win_id)
+{
+	WINDOW *win = &desk->windows[win_id];
+
+	if (desk->expl.state == WM_EXPL_VIEW)
+		wm_draw_expl_view(desk, win);
+	else
+		wm_draw_expl_list(desk, win);
+}
+
+/*****************************************************************************
  *                                wm_init
  *****************************************************************************
  * Initialize the desktop manager structure.
@@ -343,6 +582,15 @@ PUBLIC void wm_init(DESKTOP *desk, u8 *fb)
 
 	desk->term.win_id = -1;
 	wm_term_clear(desk);
+
+	desk->expl.win_id = -1;
+	desk->expl.state = WM_EXPL_LIST;
+	desk->expl.n_entries = 0;
+	desk->expl.cursor = 0;
+	desk->expl.scroll = 0;
+	desk->expl.view_row = 0;
+	desk->expl.view_len = 0;
+	desk->expl.view_name[0] = 0;
 }
 
 /*****************************************************************************
@@ -412,9 +660,11 @@ PUBLIC void wm_close_window(DESKTOP *desk, int win_id)
 	if (desk->active_window == win_id)
 		desk->active_window = -1;
 
-	/* A closed window can no longer host the terminal. */
+	/* A closed window can no longer host the terminal or the explorer. */
 	if (desk->term.win_id == win_id)
 		desk->term.win_id = -1;
+	if (desk->expl.win_id == win_id)
+		desk->expl.win_id = -1;
 
 	/* Close the gap so the remaining z_orders stay 1..N. */
 	wm_restack(desk, -1);
@@ -517,6 +767,10 @@ PUBLIC void wm_draw_window(DESKTOP *desk, int win_id)
 	/* The terminal window paints its own (dark) client area and text. */
 	if (win_id == desk->term.win_id)
 		wm_draw_terminal(desk, win_id);
+
+	/* The Files window paints its file list / text view. */
+	if (win_id == desk->expl.win_id)
+		wm_draw_explorer(desk, win_id);
 
 	/* Bevel: a light inner edge on the top and left of the border, so
 	 * overlapping windows are still distinguishable where they touch. */
@@ -722,5 +976,22 @@ PUBLIC void wm_handle_click(DESKTOP *desk, int x, int y)
 
 	if (win_id >= 0) {
 		wm_focus_window(desk, win_id);
+	}
+
+	/* A click inside the Files window selects the row under the cursor. */
+	if (win_id >= 0 && win_id == desk->expl.win_id &&
+	    desk->expl.state == WM_EXPL_LIST) {
+		WINDOW *win = &desk->windows[win_id];
+		int ty = win->y + WM_TITLE_HEIGHT + WM_EXPL_PAD;
+		int rows = wm_expl_visible_rows(desk);
+		int row;
+
+		if (y >= ty && rows > 0) {
+			row = (y - ty) / WM_TERM_CELL_H + desk->expl.scroll;
+			if (row >= 0 && row < desk->expl.n_entries) {
+				desk->expl.cursor = row;
+				wm_expl_scroll_to_cursor(desk);
+			}
+		}
 	}
 }

@@ -16,6 +16,7 @@
 #include "console.h"
 #include "global.h"
 #include "proto.h"
+#include "vga.h"
 
 
 /*****************************************************************************
@@ -126,6 +127,10 @@ PUBLIC int kernel_main()
 	init_clock();
         init_keyboard();
 	mouse_init();
+
+	/* The loader identity-maps RAM only. Map the VBE linear framebuffer
+	 * (GFX_FB_LFB) once, while we are still in ring 0. */
+	vga_map_lfb();
 
 	restart();
 
@@ -288,6 +293,19 @@ void shabby_shell(const char * tty_name)
 			p++;
 		} while(ch);
 		argv[argc] = 0;
+
+		/* Built-in power-off: ring 3 cannot touch the I/O ports itself,
+		 * so the shutdown is done by TASK_SYS (see systask.c). */
+		if (argc > 0 &&
+		    (strcmp(argv[0], "end") == 0 ||
+		     strcmp(argv[0], "poweroff") == 0)) {
+			MESSAGE msg;
+			write(1, "power off\n", 10);
+			reset_msg(&msg);
+			msg.type = SYS_POWEROFF;
+			send_recv(BOTH, TASK_SYS, &msg);
+			continue;
+		}
 
 		int fd = open(argv[0], O_RDWR);
 		if (fd == -1) {

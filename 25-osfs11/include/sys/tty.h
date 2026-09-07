@@ -12,6 +12,16 @@
 #define TTY_IN_BYTES		256	/* tty input queue size */
 #define TTY_OUT_BUF_LEN		2	/* tty output buffer size */
 
+/* Navigation keys translated for the GUI owner (the desktop). They are
+ * delivered as ASCII control characters that normal typing never produces
+ * (keyboard.c maps letters, digits, space, '\n' and '\b' only). */
+#define GUI_KEY_UP	0x01	/* Up arrow      */
+#define GUI_KEY_DOWN	0x02	/* Down arrow    */
+#define GUI_KEY_PGUP	0x03	/* Page Up       */
+#define GUI_KEY_PGDN	0x04	/* Page Down     */
+#define GUI_KEY_HOME	0x05	/* Home          */
+#define GUI_KEY_END	0x06	/* End           */
+
 struct s_tty;
 struct s_console;
 

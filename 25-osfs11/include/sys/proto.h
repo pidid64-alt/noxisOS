@@ -8,6 +8,7 @@
 /* kliba.asm */
 PUBLIC void	out_byte(u16 port, u8 value);
 PUBLIC u8	in_byte(u16 port);
+PUBLIC void	out_word(u16 port, u16 value);
 PUBLIC void	disp_str(char * info);
 PUBLIC void	disp_color_str(char * info, int color);
 PUBLIC void	disable_irq(int irq);
@@ -73,6 +74,7 @@ PUBLIC void dump_tty_buf();	/* for debug only */
 
 /* systask.c */
 PUBLIC void task_sys();
+PUBLIC void power_off(void);
 
 /* gfx.c */
 PUBLIC void task_gfx();
