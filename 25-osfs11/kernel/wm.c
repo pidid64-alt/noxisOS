@@ -146,6 +146,9 @@ PUBLIC void wm_init(DESKTOP *desk, u8 *fb)
 	desk->mouse_x = GFX_FB_W / 2;
 	desk->mouse_y = GFX_FB_H / 2;
 	desk->mouse_buttons = 0;
+	desk->drag_window = -1;
+	desk->drag_offset_x = 0;
+	desk->drag_offset_y = 0;
 	desk->active_window = -1;
 	desk->running = 1;
 
@@ -333,10 +336,33 @@ PUBLIC void wm_update_mouse(DESKTOP *desk, int dx, int dy, int buttons)
 	if (desk->mouse_y < 0) desk->mouse_y = 0;
 	if (desk->mouse_y >= GFX_FB_H) desk->mouse_y = GFX_FB_H - 1;
 
-	/* Detect clicks (button press) */
+	/* Start dragging when the left button is pressed on a title bar. */
 	if ((buttons & 1) && !(desk->mouse_buttons & 1)) {
 		wm_handle_click(desk, desk->mouse_x, desk->mouse_y);
+		desk->drag_window = desk->active_window;
+		if (desk->drag_window >= 0) {
+			WINDOW *win = &desk->windows[desk->drag_window];
+			if (desk->mouse_y < win->y + WM_TITLE_HEIGHT) {
+				desk->drag_offset_x = desk->mouse_x - win->x;
+				desk->drag_offset_y = desk->mouse_y - win->y;
+			} else {
+				desk->drag_window = -1;
+			}
+		}
 	}
+
+	/* Move the focused window while its title bar is held. */
+	if ((buttons & 1) && desk->drag_window >= 0) {
+		WINDOW *win = &desk->windows[desk->drag_window];
+		win->x = desk->mouse_x - desk->drag_offset_x;
+		win->y = desk->mouse_y - desk->drag_offset_y;
+		if (win->x < 0) win->x = 0;
+		if (win->y < 0) win->y = 0;
+		if (win->x + win->width > GFX_FB_W) win->x = GFX_FB_W - win->width;
+		if (win->y + win->height > GFX_FB_H) win->y = GFX_FB_H - win->height;
+	}
+	if (!(buttons & 1))
+		desk->drag_window = -1;
 
 	desk->mouse_buttons = buttons;
 }

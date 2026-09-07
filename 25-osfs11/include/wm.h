@@ -57,6 +57,9 @@ typedef struct s_desktop {
 	int active_window;     /* index of focused window, -1 if none */
 	int mouse_x, mouse_y;  /* mouse cursor position */
 	int mouse_buttons;     /* button state: bit 0=left, 1=right, 2=middle */
+	int drag_window;       /* window being dragged, or -1 */
+	int drag_offset_x;     /* cursor offset from window origin */
+	int drag_offset_y;
 	u8 *framebuffer;       /* pointer to graphics buffer */
 	int running;           /* 1 if desktop is active */
 } DESKTOP;
