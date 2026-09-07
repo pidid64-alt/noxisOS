@@ -44,6 +44,11 @@ PUBLIC void task_sys()
 			msg.RETVAL = ticks;
 			send_recv(SEND, src, &msg);
 			break;
+		case SYS_POWEROFF:
+			/* Anyone (including ring-3 shells) can ask for a clean
+			 * power-off; ring 1 owns the I/O ports, ring 3 does not. */
+			power_off();
+			break;
 		case GET_PID:
 			msg.type = SYSCALL_RET;
 			msg.PID = src;
@@ -95,6 +100,31 @@ PRIVATE u32 get_rtc_time(struct time *t)
 	t->year += 2000;
 
 	return 0;
+}
+
+/*****************************************************************************
+ *                                power_off
+ *****************************************************************************/
+/**
+ * Power the machine down.
+ *
+ * noxisOS targets QEMU/Bochs, whose "std" VGA machine emulates the PIIX4
+ * ACPI controller with PM1a_CNT at port 0x604. Writing the S5 sleep type
+ * (5 << 10) with SLP_EN (bit 13) set requests a power-off; the classic
+ * 0x2000 value is written afterwards as the QEMU/Bochs shorthand. If the
+ * write is ignored (real hardware without ACPI), the CPU simply halts.
+ *
+ * <Ring 1> I/O port access needs IOPL, which only the kernel tasks have --
+ * ring-3 code must ask TASK_SYS (SYS_POWEROFF) instead of calling this.
+ *****************************************************************************/
+PUBLIC void power_off(void)
+{
+	disable_int();
+	out_word(0x604, 0x3400);	/* ACPI S5: SLP_TYP5 | SLP_EN */
+	out_word(0x604, 0x2000);	/* QEMU/Bochs power-off shorthand */
+
+	while (1)
+		__asm__ __volatile__("hlt");
 }
 
 /*****************************************************************************

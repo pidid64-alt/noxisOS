@@ -25,8 +25,8 @@ typedef unsigned int	u32;
 #define PRIVATE		static
 
 /* ---- mirrored constants (see include/sys/const.h) ----------------------- */
-#define GFX_FB_W	320
-#define GFX_FB_H	200
+#define GFX_FB_W	800
+#define GFX_FB_H	600
 #define GFX_FB_BYTES	(GFX_FB_W * GFX_FB_H)
 
 /* ---- mirrored window-manager constants/types (see include/wm.h) ---------
@@ -60,13 +60,19 @@ typedef unsigned int	u32;
 
 #define WM_TERM_CELL_W      8
 #define WM_TERM_CELL_H      16
-#define WM_TERM_COLS        36
-#define WM_TERM_ROWS        9
+#define WM_TERM_COLS        56
+#define WM_TERM_ROWS        24
 #define WM_TERM_PAD         2
 #define WM_TERM_WIN_W  (WM_TERM_COLS * WM_TERM_CELL_W + \
                         2 * WM_BORDER_WIDTH + 2 * WM_TERM_PAD)
 #define WM_TERM_WIN_H  (WM_TERM_ROWS * WM_TERM_CELL_H + WM_TITLE_HEIGHT + \
                         WM_BORDER_WIDTH + 2 * WM_TERM_PAD)
+#define WM_TERM_WIN_X   (GFX_FB_W - WM_TERM_WIN_W - 16)
+#define WM_TERM_WIN_Y   8
+#define WM_EXPL_WIN_X   8
+#define WM_EXPL_WIN_Y   8
+#define WM_EXPL_WIN_W   288
+#define WM_EXPL_WIN_H   (GFX_FB_H - 16)
 
 typedef struct s_window {
 	int x, y;
@@ -83,6 +89,35 @@ typedef struct s_terminal {
 	int  win_id;
 } TERMINAL;
 
+#define WM_EXPL_LIST        0
+#define WM_EXPL_VIEW        1
+#define WM_EXPL_MAX_ENTRIES 64
+#define WM_EXPL_NAME_LEN    13
+#define WM_EXPL_VIEW_MAX    4096
+#define WM_EXPL_PAD         2
+
+#define WM_COLOR_EXPL_SEL   9
+
+typedef struct s_expl_entry {
+	int  inode;
+	int  size;
+	char kind;
+	char name[WM_EXPL_NAME_LEN];
+} EXPL_ENTRY;
+
+typedef struct s_explorer {
+	int  win_id;
+	int  state;
+	int  n_entries;
+	int  cursor;
+	int  scroll;
+	int  view_row;
+	int  view_len;
+	char view_name[WM_EXPL_NAME_LEN];
+	char view[WM_EXPL_VIEW_MAX];
+	EXPL_ENTRY entries[WM_EXPL_MAX_ENTRIES];
+} EXPLORER;
+
 typedef struct s_desktop {
 	WINDOW windows[WM_MAX_WINDOWS];
 	int active_window;
@@ -94,6 +129,7 @@ typedef struct s_desktop {
 	u8 *framebuffer;
 	int running;
 	TERMINAL term;
+	EXPLORER expl;
 } DESKTOP;
 
 /* mirrored prototypes (see include/wm.h) */
@@ -114,6 +150,9 @@ PUBLIC void wm_term_clear(DESKTOP *desk);
 PUBLIC void wm_term_putc(DESKTOP *desk, char c);
 PUBLIC void wm_term_puts(DESKTOP *desk, const char *s);
 PUBLIC void wm_term_backspace(DESKTOP *desk);
+PUBLIC int  wm_expl_open(DESKTOP *desk, int x, int y, int w, int h,
+                         const char *title);
+PUBLIC void wm_expl_scroll_to_cursor(DESKTOP *desk);
 
 /* Guard bytes around the fake framebuffer so any out-of-bounds write by a
  * drawing primitive is caught instead of silently corrupting the heap. */
@@ -391,6 +430,117 @@ int main(void)
 		/* Closing the window detaches the terminal. */
 		wm_close_window(&desk, id);
 		CHECK(desk.term.win_id == -1,		"close: terminal detaches with its window");
+	}
+
+	/* === file explorer: state, scroll, click selection, rendering === */
+	wm_init(&desk, fb);
+	CHECK(desk.expl.win_id == -1,		"wm_init: no explorer window yet");
+	CHECK(desk.expl.state == WM_EXPL_LIST &&
+	      desk.expl.n_entries == 0 && desk.expl.cursor == 0 &&
+	      desk.expl.scroll == 0 && desk.expl.view_row == 0 &&
+	      desk.expl.view_len == 0,		"wm_init: explorer state is reset");
+	{
+		int id = wm_expl_open(&desk, WM_EXPL_WIN_X, WM_EXPL_WIN_Y,
+		                      WM_EXPL_WIN_W, WM_EXPL_WIN_H, "Files");
+		int rows, c, x, y, sel = 0, glyph = 0, stray = 0;
+		int x0, y0, w, h;
+
+		CHECK(id >= 0,			"expl_open: window created");
+		CHECK(desk.expl.win_id == id,	"expl_open: explorer attached");
+		CHECK(desk.expl.state == WM_EXPL_LIST && desk.expl.n_entries == 0,
+						"expl_open: starts in list mode, empty");
+		CHECK(desk.active_window == id,	"expl_open: Files window is focused");
+		rows = wm_expl_visible_rows(&desk);
+		CHECK(rows > 0 && rows * WM_TERM_CELL_H <=
+		      desk.windows[id].height - WM_TITLE_HEIGHT - WM_BORDER_WIDTH
+		      - 2 * WM_EXPL_PAD,
+						"expl: full rows fit the client area");
+
+		/* A long file list scrolls: the cursor must always stay visible. */
+		{
+			int i;
+			for (i = 0; i < WM_EXPL_MAX_ENTRIES; i++) {
+				desk.expl.entries[i].inode = i + 1;
+				desk.expl.entries[i].size = 100 + i;
+				desk.expl.entries[i].kind = 'f';
+				desk.expl.entries[i].name[0] = (char)('a' + i % 26);
+				desk.expl.entries[i].name[1] = 0;
+			}
+			desk.expl.n_entries = WM_EXPL_MAX_ENTRIES;
+		}
+		desk.expl.cursor = 0; desk.expl.scroll = 0;
+		desk.expl.cursor = WM_EXPL_MAX_ENTRIES - 1;
+		wm_expl_scroll_to_cursor(&desk);
+		CHECK(desk.expl.scroll == WM_EXPL_MAX_ENTRIES - rows,
+		      "expl_scroll: cursor past the last page scrolls down");
+		desk.expl.cursor = 0;
+		wm_expl_scroll_to_cursor(&desk);
+		CHECK(desk.expl.scroll == 0,
+		      "expl_scroll: cursor above the window scrolls to the top");
+
+		/* A click on a row selects that row (scroll offset honoured). */
+		desk.expl.cursor = 0; desk.expl.scroll = 10;
+		desk.mouse_x = desk.windows[id].x + 50;
+		desk.mouse_y = desk.windows[id].y + WM_TITLE_HEIGHT + WM_EXPL_PAD
+		               + 3 * WM_TERM_CELL_H + 5;
+		wm_handle_click(&desk, desk.mouse_x, desk.mouse_y);
+		CHECK(desk.expl.cursor == 13 && desk.expl.scroll == 10,
+		      "expl_click: row under the pointer is selected (scroll kept)");
+		CHECK(desk.active_window == id,
+		      "expl_click: Files window is focused by the click");
+
+		/* Rendering a list stays inside the window and shows the
+		 * selection highlight plus text. */
+		desk.expl.scroll = 0; desk.expl.cursor = 1;
+		memset(fb, 0, GFX_FB_BYTES);
+		wm_draw_window(&desk, id);
+		x0 = desk.windows[id].x; y0 = desk.windows[id].y;
+		w = desk.windows[id].width; h = desk.windows[id].height;
+		for (y = 0; y < GFX_FB_H; y++)
+			for (x = 0; x < GFX_FB_W; x++) {
+				int inside = (x >= x0 - 1 && x <= x0 + w + 1 &&
+				              y >= y0 - 1 && y <= y0 + h + 1);
+				u8 c = fb[y * GFX_FB_W + x];
+				if (!inside && c != 0)
+					stray++;
+				if (inside && y > y0 + WM_TITLE_HEIGHT) {
+					if (c == WM_COLOR_EXPL_SEL) sel++;
+					if (c == WM_COLOR_TITLE_TEXT) glyph++;
+				}
+			}
+		CHECK(stray == 0,	"draw_explorer: nothing painted outside the window");
+		CHECK(sel > 100,	"draw_explorer: selected row is highlighted");
+		CHECK(glyph > 100,	"draw_explorer: file names are rendered");
+		CHECK(guard_ok(fb),	"draw_explorer: no out-of-bounds write");
+
+		/* View mode with a wrapped buffer stays inside the window too. */
+		desk.expl.state = WM_EXPL_VIEW;
+		desk.expl.view_len = 0;
+		for (c = 0; c < 3; c++) {
+			const char *line = "Lorem ipsum dolor sit amet consectetur "
+			                   "adipiscing elit sed do eiusmod";
+			const char *p;
+			for (p = line; *p && desk.expl.view_len < WM_EXPL_VIEW_MAX; p++)
+				desk.expl.view[desk.expl.view_len++] = *p;
+			if (desk.expl.view_len < WM_EXPL_VIEW_MAX)
+				desk.expl.view[desk.expl.view_len++] = '\n';
+		}
+		memset(fb, 0, GFX_FB_BYTES);
+		wm_draw_window(&desk, id);
+		CHECK(guard_ok(fb),	"draw_expl_view: no out-of-bounds write");
+		stray = 0;
+		for (y = 0; y < GFX_FB_H; y++)
+			for (x = 0; x < GFX_FB_W; x++) {
+				int inside = (x >= x0 - 1 && x <= x0 + w + 1 &&
+				              y >= y0 - 1 && y <= y0 + h + 1);
+				if (!inside && fb[y * GFX_FB_W + x] != 0)
+					stray++;
+			}
+		CHECK(stray == 0,	"draw_expl_view: nothing painted outside the window");
+
+		/* Closing the window detaches the explorer. */
+		wm_close_window(&desk, id);
+		CHECK(desk.expl.win_id == -1,	"close: explorer detaches with its window");
 	}
 
 	/* === wm_draw_window: stays inside the window + its shadow === */

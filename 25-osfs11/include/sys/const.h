@@ -104,12 +104,24 @@
 #define	VGA_AC_ADDR	0x3C0	/* Attribute Controller Address/Data Register */
 #define	VGA_AC_RDY	0x3DA	/* Input Status #1 / AC flip-flop reset */
 
-#define	GFX_FB_BASE	0xA0000	/* linear framebuffer base (mode 13h) */
-#define	GFX_FB_SIZE	0xFA00	/* 320 * 200 = 64000 bytes (used: 64000) */
-#define	GFX_FB_W	320	/* mode 13h width  */
-#define	GFX_FB_H	200	/* mode 13h height */
-#define	GFX_FB_BYTES	(GFX_FB_W * GFX_FB_H)	/* 64000 */
-#define	GFX_PITCH	320	/* bytes per scanline in mode 13h */
+/* Graphics (VBE 800x600x8 on the emulated VGA) ---------------------------- */
+/* GFX_FB_BASE stays the 0xA0000 VGA window: while the card is in a standard
+ * VGA mode that is where the text-mode frame and the BIOS text font live. */
+#define	GFX_FB_BASE	0xA0000	/* VGA window base (text/font access)  */
+#define	GFX_FB_SIZE	0x75300	/* 800 * 600 = 480000 bytes            */
+#define	GFX_FB_W	800	/* desktop width  (VBE linear mode)     */
+#define	GFX_FB_H	600	/* desktop height (VBE linear mode)     */
+#define	GFX_FB_BYTES	(GFX_FB_W * GFX_FB_H)	/* 480000             */
+#define	GFX_PITCH	800	/* bytes per scanline                   */
+/* The double buffer cannot live in the kernel image (the kernel must stay
+ * below the loader's staging area at 0x70000), so it is parked in free RAM
+ * at 3 MB: above the paging tables (0x100000+) and far below PROCS_BASE
+ * (10 MB) where forked user processes live. */
+#define	GFX_FB_RAM	0x300000
+/* Bochs/QEMU VBE linear framebuffer of the emulated "std" VGA card. The
+ * loader identity-maps RAM only, so vga_map_lfb() adds a 4 MB page-table
+ * entry for this window at boot (see kernel/vga.c). */
+#define	GFX_FB_LFB	0xE0000000
 
 /* CMOS */
 #define CLK_ELE		0x70	/* CMOS RAM address register port (write only)
@@ -217,6 +229,7 @@ enum msgtype {
 	/* DESKTOP */
 	DESKTOP_START,	/* a user proc asks TASK_DESKTOP to start GUI */
 	DESKTOP_DONE,	/* TASK_DESKTOP finished, reply to the caller */
+	SYS_POWEROFF,	/* power the machine down (any ring may ask TASK_SYS) */
 
 	/* message type for drivers */
 	DEV_OPEN = 1001,

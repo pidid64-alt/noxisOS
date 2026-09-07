@@ -198,7 +198,25 @@ PUBLIC void in_process(TTY* tty, u32 key)
 			case TAB:
 				gui_put_char(' ');
 				break;
-			default:	/* ESC, F-keys, arrows: not typed text */
+			case UP:
+				gui_put_char(GUI_KEY_UP);
+				break;
+			case DOWN:
+				gui_put_char(GUI_KEY_DOWN);
+				break;
+			case PAGEUP:
+				gui_put_char(GUI_KEY_PGUP);
+				break;
+			case PAGEDOWN:
+				gui_put_char(GUI_KEY_PGDN);
+				break;
+			case HOME:
+				gui_put_char(GUI_KEY_HOME);
+				break;
+			case END:
+				gui_put_char(GUI_KEY_END);
+				break;
+			default:	/* ESC, F-keys, ...: not typed text */
 				break;
 			}
 		}

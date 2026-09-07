@@ -1,8 +1,15 @@
 /* Shared VGA mode switching for TASK_GFX and TASK_DESKTOP.
  *
- * VGA register writes alone are not enough: AC bit 5 must re-enable the
- * display, CRTC timings must be unlocked, and graphics writes overwrite both
- * text characters and the font in plane 2. Keep all of that state together.
+ * The desktop/demo run in 800x600x8 with a linear framebuffer, entered
+ * through the Bochs/QEMU VBE (DISPI) interface: no BIOS call is needed in
+ * protected mode -- just two 16-bit ports (0x1CE/0x1CF). The text-mode
+ * state (indexed registers, three console pages, the BIOS font and the DAC)
+ * is saved on entry and restored on exit so the text consoles keep working
+ * after the GUI closes.
+ *
+ * The linear framebuffer lives at GFX_FB_LFB (0xE0000000 on the emulated
+ * "std" VGA card). RAM is identity-mapped by the loader, so vga_map_lfb()
+ * adds one 4 MB page-table entry for that window at boot (ring 0 only).
  */
 #include "type.h"
 #include "stdio.h"
@@ -29,9 +36,10 @@
 #define VGA_FONT_BYTES (256 * 32) /* BIOS text font, bank 0 */
 #define VGA_PALETTE_BYTES (256 * 3)
 
-/* Sharing the back buffer also leaves room below the boot loader's kernel
- * file at 0x70000 for the saved console and font. */
-PUBLIC u8 vga_framebuffer[GFX_FB_BYTES];
+/* The double buffer is placed in free RAM (see GFX_FB_RAM in const.h): an
+ * 800x600 buffer no longer fits inside the kernel image, which must stay
+ * below the loader's staging area at 0x70000. */
+PUBLIC u8 *vga_framebuffer = (u8 *)GFX_FB_RAM;
 PRIVATE int graphics_active;
 PRIVATE u8 saved_regs[VGA_REG_BYTES];
 PRIVATE u8 saved_text[V_MEM_SIZE];
@@ -39,24 +47,88 @@ PRIVATE u8 saved_font[VGA_FONT_BYTES];
 PRIVATE u8 saved_palette[VGA_PALETTE_BYTES];
 PRIVATE u8 saved_dac_mask;
 
-PRIVATE const u8 mode13h[VGA_REG_BYTES] = {
-	0x63,
-	0x03, 0x01, 0x0F, 0x00, 0x0E,
-	0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F, 0x00, 0x41,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x9C, 0x8E, 0x8F, 0x28,
-	0x40, 0x96, 0xB9, 0xA3, 0xFF,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x05, 0x0F, 0xFF,
-	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
-	0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x41, 0x00, 0x0F, 0x00, 0x00
-};
-
-/* Mode 13h indexes the DAC directly, unlike the BIOS text-mode AC palette. */
+/* The 8-bit VBE mode indexes the DAC directly (like mode 13h did), so the
+ * first sixteen entries are set to the standard VGA palette the window
+ * manager draws with. */
 PRIVATE const u8 colors16[16 * 3] = {
 	 0,  0,  0,   0,  0, 42,   0, 42,  0,   0, 42, 42,
 	42,  0,  0,  42,  0, 42,  42, 21,  0,  42, 42, 42,
 	21, 21, 21,  21, 21, 63,  21, 63, 21,  21, 63, 63,
 	63, 21, 21,  63, 21, 63,  63, 63, 21,  63, 63, 63
 };
+
+/* Bochs/QEMU VBE (DISPI) interface -------------------------------------
+ * The emulated "std" VGA card implements the Bochs VBE extension: write an
+ * index word to 0x1CE, then the value word to 0x1CF. Mode changes are done
+ * by the card itself, so no CRTC/sequencer tables are needed. */
+#define VBE_DISPI_IOPORT_INDEX   0x1CE
+#define VBE_DISPI_IOPORT_DATA    0x1CF
+#define VBE_DISPI_INDEX_ID       0x0
+#define VBE_DISPI_INDEX_XRES     0x1
+#define VBE_DISPI_INDEX_YRES     0x2
+#define VBE_DISPI_INDEX_BPP      0x3
+#define VBE_DISPI_INDEX_ENABLE   0x4
+#define VBE_DISPI_DISABLED       0x00
+#define VBE_DISPI_ENABLED        0x01
+#define VBE_DISPI_LFB_ENABLED    0x40
+#define VBE_DISPI_BPP_8          8
+
+PRIVATE void vbe_write(u16 index, u16 value)
+{
+	out_word(VBE_DISPI_IOPORT_INDEX, index);
+	out_word(VBE_DISPI_IOPORT_DATA, value);
+}
+
+/* Switch the card to GFX_FB_W x GFX_FB_H, 8 bpp, linear framebuffer. */
+PRIVATE void vbe_enter_mode(void)
+{
+	vbe_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
+	vbe_write(VBE_DISPI_INDEX_XRES, GFX_FB_W);
+	vbe_write(VBE_DISPI_INDEX_YRES, GFX_FB_H);
+	vbe_write(VBE_DISPI_INDEX_BPP, VBE_DISPI_BPP_8);
+	vbe_write(VBE_DISPI_INDEX_ENABLE,
+	          VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+}
+
+/* Leave the VBE mode: the card falls back to the standard VGA mode whose
+ * registers were saved on entry (BIOS text mode). */
+PRIVATE void vbe_leave_mode(void)
+{
+	vbe_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
+}
+
+/* The loader identity-maps RAM but not the VBE linear framebuffer window at
+ * GFX_FB_LFB (0xE0000000). Add one 4 MB big-page entry to the page
+ * directory -- the loader keeps it at 0x100000 -- and enable CR4.PSE so the
+ * PS bit is honoured. Ring 0 only; call once at boot (kernel_main). */
+#define VBE_LFB_PDE_ADDR (0x100000 + ((GFX_FB_LFB >> 22) * 4))
+
+PUBLIC void vga_map_lfb(void)
+{
+#if defined(__i386__)
+	disable_int();
+	__asm__ __volatile__("movl %%cr4, %%eax\n\t"
+	                     "orl $0x10, %%eax\n\t"  /* CR4.PSE */
+	                     "movl %%eax, %%cr4"
+	                     ::: "eax", "memory");
+	/* P | RW | US | PS: present, writable, user, 4 MB page. */
+	*(u32 *)VBE_LFB_PDE_ADDR = GFX_FB_LFB | 0x87;
+	/* Flush the TLB so the new PDE takes effect. */
+	__asm__ __volatile__("movl %%cr3, %%eax\n\t"
+	                     "movl %%eax, %%cr3"
+	                     ::: "eax", "memory");
+	enable_int();
+#else
+	/* Host build (unit tests): no CR4/CR3 access on the test machine.
+	 * The real mapping is ring-0-only and happens once in kernel_main. */
+	(void)VBE_LFB_PDE_ADDR;
+#endif
+}
+
+PUBLIC void vga_blit(void)
+{
+	memcpy((void *)GFX_FB_LFB, vga_framebuffer, GFX_FB_BYTES);
+}
 
 PRIVATE void vga_save_regs(u8 *s)
 {
@@ -158,7 +230,8 @@ PUBLIC int vga_enter_graphics(void)
 	vga_font_access();
 	memcpy(saved_font, (void *)GFX_FB_BASE, VGA_FONT_BYTES);
 
-	vga_write_regs(mode13h);
+	/* 800x600x8 with a linear framebuffer (Bochs/QEMU VBE). */
+	vbe_enter_mode();
 	out_byte(VGA_DAC_MASK, 0xFF);
 	out_byte(VGA_DAC_WRITE, 0);
 	for (i = 0; i < 16 * 3; i++)
@@ -172,8 +245,10 @@ PUBLIC void vga_leave_graphics(void)
 	int i;
 	disable_int();
 	if (graphics_active) {
-		/* Leave graphics addressing (including CRTC double-word mode)
-		 * before restoring the planar text font. */
+		/* Drop the VBE mode first (the card reverts to the standard
+		 * VGA mode whose registers were saved on entry), then restore
+		 * the planar text font and the console pages. */
+		vbe_leave_mode();
 		vga_write_regs(saved_regs);
 		vga_font_access();
 		memcpy((void *)GFX_FB_BASE, saved_font, VGA_FONT_BYTES);

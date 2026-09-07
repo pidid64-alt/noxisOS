@@ -4,7 +4,7 @@
  * @brief  Window Manager - minimal desktop environment for noxisOS
  *
  * Provides a basic window manager with mouse support, window rendering,
- * and desktop shell functionality for VGA mode 13h (320x200).
+ * and desktop shell functionality for the 800x600 VBE framebuffer.
  *
  * @author noxisOS
  * @date   2026-08-28
@@ -43,6 +43,7 @@
 #define WM_COLOR_SHADOW     0   /* black */
 #define WM_COLOR_TERM_BG    0   /* black -- terminal client area */
 #define WM_COLOR_TERM_TEXT  15  /* white -- terminal text and cursor */
+#define WM_COLOR_EXPL_SEL   9   /* light blue -- selected explorer row */
 
 /* Mouse cursor */
 #define WM_CURSOR_WIDTH     8
@@ -55,8 +56,8 @@
  * the values are mirrored here so wm.h stays free of font internals. */
 #define WM_TERM_CELL_W      8
 #define WM_TERM_CELL_H      16
-#define WM_TERM_COLS        36
-#define WM_TERM_ROWS        9
+#define WM_TERM_COLS        56
+#define WM_TERM_ROWS        24
 #define WM_TERM_PAD         2   /* pixels between the client edge and text */
 
 /* Outer window size that makes the client area fit COLS x ROWS cells. */
@@ -65,12 +66,57 @@
 #define WM_TERM_WIN_H  (WM_TERM_ROWS * WM_TERM_CELL_H + WM_TITLE_HEIGHT + \
                         WM_BORDER_WIDTH + 2 * WM_TERM_PAD)
 
+/* Default layout on the 800x600 desktop: the Files explorer is docked on
+ * the left, the TTY window next to it (see desktop.c). */
+#define WM_TERM_WIN_X   (GFX_FB_W - WM_TERM_WIN_W - 16)
+#define WM_TERM_WIN_Y   8
+#define WM_EXPL_WIN_X   8
+#define WM_EXPL_WIN_Y   8
+#define WM_EXPL_WIN_W   288
+#define WM_EXPL_WIN_H   (GFX_FB_H - 16)
+
 /* Terminal text buffer: a fixed grid of characters plus a cursor. */
 typedef struct s_terminal {
 	char cells[WM_TERM_ROWS][WM_TERM_COLS];
 	int  cur_col, cur_row;   /* cursor cell */
 	int  win_id;             /* hosting window, -1 when there is none */
 } TERMINAL;
+
+/* File explorer -----------------------------------------------------------
+ *
+ * A second kind of desktop window: a list of the files in the root
+ * directory (the Orange'S filesystem is flat -- there are no subfolders).
+ * The DESKTOP task fills the entries (it owns the FS access); the window
+ * manager only renders them and translates mouse clicks into a selection.
+ * Pressing Enter in list mode switches to a read-only text view of the
+ * selected regular file (expl.state == WM_EXPL_VIEW). */
+
+#define WM_EXPL_LIST        0   /* explorer shows the file list */
+#define WM_EXPL_VIEW        1   /* explorer shows a file's contents */
+#define WM_EXPL_MAX_ENTRIES 64
+#define WM_EXPL_NAME_LEN    13  /* 12 chars + NUL (FS filenames) */
+#define WM_EXPL_VIEW_MAX    4096
+#define WM_EXPL_PAD         2   /* pixels around the client text */
+
+typedef struct s_expl_entry {
+	int  inode;
+	int  size;
+	char kind;              /* 'f' regular, 'd' dir, 'c' char dev, '-' */
+	char name[WM_EXPL_NAME_LEN];
+} EXPL_ENTRY;
+
+typedef struct s_explorer {
+	int  win_id;             /* hosting window, -1 when there is none */
+	int  state;              /* WM_EXPL_LIST or WM_EXPL_VIEW */
+	int  n_entries;          /* valid entries[] */
+	int  cursor;             /* selected row in list mode */
+	int  scroll;             /* first visible row in list mode */
+	int  view_row;           /* first visible line in view mode */
+	int  view_len;           /* bytes stored in view[] */
+	char view_name[WM_EXPL_NAME_LEN]; /* file being viewed */
+	char view[WM_EXPL_VIEW_MAX];       /* sanitised file contents */
+	EXPL_ENTRY entries[WM_EXPL_MAX_ENTRIES];
+} EXPLORER;
 
 /* Window structure */
 typedef struct s_window {
@@ -94,6 +140,7 @@ typedef struct s_desktop {
 	u8 *framebuffer;       /* pointer to graphics buffer */
 	int running;           /* 1 if desktop is active */
 	TERMINAL term;         /* the TTY window's text buffer */
+	EXPLORER expl;         /* the Files window */
 } DESKTOP;
 
 /* Window manager functions */
@@ -116,6 +163,11 @@ PUBLIC void wm_term_clear(DESKTOP *desk);
 PUBLIC void wm_term_putc(DESKTOP *desk, char c);
 PUBLIC void wm_term_puts(DESKTOP *desk, const char *s);
 PUBLIC void wm_term_backspace(DESKTOP *desk);
+
+/* File-explorer window functions */
+PUBLIC int  wm_expl_open(DESKTOP *desk, int x, int y, int w, int h,
+                         const char *title);
+PUBLIC void wm_expl_scroll_to_cursor(DESKTOP *desk); /* keep the row visible */
 
 /* PS/2 Mouse driver functions */
 PUBLIC void mouse_init(void);

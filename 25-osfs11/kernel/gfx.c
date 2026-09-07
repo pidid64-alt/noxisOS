@@ -1,20 +1,20 @@
 /*************************************************************************//**
  *****************************************************************************
  * @file   gfx.c
- * @brief  TASK_GFX -- a framebuffer graphics demo (VGA mode 13h).
+ * @brief  TASK_GFX -- a framebuffer graphics demo (800x600 VBE).
  *
  * This is the first step towards a graphical environment: it proves the
  * pixel pipeline (switch VGA to a graphics mode without BIOS, drive the
  * linear framebuffer, draw primitives, run a stable animation loop).
  *
  * The task lives in an infinite message loop. A user process (the `demo'
- * command) sends a GFX_RUN message; TASK_GFX switches to mode 13h, renders
+ * command) sends a GFX_RUN message; TASK_GFX switches to 800x600x8, renders
  * test patterns (~2 s) then a bouncing-ball animation, polls TTY for ESC,
  * and finally switches back to text mode 3 before replying GFX_DONE.
  *
- * VGA is programmed with register tables (no BIOS, since we are in
- * protected mode). The text-mode registers are saved on entry and restored
- * on exit so the console keeps working after the demo.
+ * The VBE mode is programmed through the Bochs/QEMU DISPI ports (no BIOS,
+ * since we are in protected mode). The text-mode registers are saved on
+ * entry and restored on exit so the console keeps working after the demo.
  *
  * @author noxisOS
  * @date   2026-08-27
@@ -99,8 +99,8 @@ PUBLIC void task_gfx()
 /*****************************************************************************
  *                                gfx_run_demo
  *****************************************************************************
- * Save text-mode VGA state, switch to mode 13h, run the demo, then restore
- * text mode 3 and return. VGA state is owned by the shared driver.
+ * Save text-mode VGA state, switch to 800x600x8, run the demo, then
+ * restore text mode and return. VGA state is owned by the shared driver.
  *****************************************************************************/
 PRIVATE int gfx_run_demo(void)
 {
@@ -187,11 +187,11 @@ PRIVATE void gfx_sync_frame(int * last)
 /*****************************************************************************
  *                                gfx_present
  *****************************************************************************
- * Copy the double buffer into the linear framebuffer @0xA0000.
+ * Copy the double buffer into the VBE linear framebuffer.
  *****************************************************************************/
 PRIVATE void gfx_present(void)
 {
-	memcpy((void *)GFX_FB_BASE, vga_framebuffer, GFX_FB_BYTES);
+	vga_blit();
 }
 
 

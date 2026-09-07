@@ -139,6 +139,8 @@ def build(output):
     for name in ("echo", "pwd", "demo", "desktop"):
         files[name] = (OS_DIR / "command" / name).read_bytes()
     files["hdldr.bin"] = (OS_DIR / "boot/hdldr.bin").read_bytes()
+    # A plain text file so the desktop file explorer / cat have content.
+    files["readme.txt"] = (OS_DIR / "command" / "readme.txt").read_bytes()
     archive = io.BytesIO()
     with tarfile.open(fileobj=archive, mode="w", format=tarfile.USTAR_FORMAT) as tar:
         for name, data in files.items():
