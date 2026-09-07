@@ -116,6 +116,21 @@ PUBLIC void vga_blit(void)
 	vbe_write(VBE_DISPI_INDEX_BANK, 0);
 }
 
+/* Re-enable video output after touching the Attribute Controller.
+ *
+ * Every write to the AC index port (0x3C0) with bit 5 clear blanks the
+ * display: "Palette Address Source" = 0 means the host is programming the
+ * palette and the screen goes black. QEMU honours this for ALL modes --
+ * vga_update_display() forces GMODE_BLANK whenever (ar_index & 0x20) == 0,
+ * even when the VBE/DISPI controller is enabled. Saving the AC registers
+ * leaves the index at 0x14, so without this the desktop and the demo render
+ * into a screen QEMU keeps black. */
+PRIVATE void vga_ac_enable_video(void)
+{
+	in_byte(VGA_AC_RDY);           /* reset the address/data flip-flop */
+	out_byte(VGA_AC_ADDR, 0x20);   /* PAS = 1: normal video output */
+}
+
 PRIVATE void vga_save_regs(u8 *s)
 {
 	int i;
@@ -138,6 +153,8 @@ PRIVATE void vga_save_regs(u8 *s)
 		out_byte(VGA_AC_ADDR, i);
 		s[VGA_AC_OFF + i] = in_byte(0x3C1);
 	}
+	/* The loop left PAS = 0 (screen blanked). Turn video back on. */
+	vga_ac_enable_video();
 }
 
 PRIVATE void vga_write_regs(const u8 *s)
@@ -174,8 +191,7 @@ PRIVATE void vga_write_regs(const u8 *s)
 		out_byte(VGA_AC_ADDR, s[VGA_AC_OFF + i]);
 	}
 	/* Palette Address Source = 1: without this the monitor stays black. */
-	in_byte(VGA_AC_RDY);
-	out_byte(VGA_AC_ADDR, 0x20);
+	vga_ac_enable_video();
 }
 
 PRIVATE void vga_font_access(void)
@@ -222,6 +238,9 @@ PUBLIC int vga_enter_graphics(void)
 	out_byte(VGA_DAC_WRITE, 0);
 	for (i = 0; i < 16 * 3; i++)
 		out_byte(VGA_DAC_DATA, colors16[i]);
+	/* Belt and braces: the DISPI mode only produces a picture while the
+	 * AC video-enable bit is set (see vga_ac_enable_video). */
+	vga_ac_enable_video();
 	enable_int();
 	return 0;
 }
