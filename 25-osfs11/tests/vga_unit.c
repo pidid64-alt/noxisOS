@@ -169,10 +169,14 @@ int main(void)
 		CHECK(vga_enter_graphics() == 0, "enter graphics succeeds");
 		CHECK(interrupts, "interrupts enabled after entry");
 		CHECK(vga_graphics_active(), "VGA is owned during graphics");
-		/* The AC video-enable bit is cleared while the text registers are
-		 * saved, but the VBE (DISPI) controller drives the output from
-		 * then on -- the real black-screen bugs lived in the RESTORE path
-		 * (vga_write_regs must end with AC index 0x20), checked below. */
+		/* Saving the AC registers writes indexes 0..20 to port 0x3C0 with
+		 * bit 5 clear, which blanks the display. QEMU keeps the screen
+		 * BLACK in that state even with the VBE (DISPI) mode enabled
+		 * (vga_update_display -> GMODE_BLANK), so the driver must set
+		 * index 0x20 again before/after entering graphics. This was the
+		 * "desktop/demo show only a black screen" bug. */
+		CHECK(display_enabled,
+		      "video output re-enabled (AC index 0x20) while in graphics");
 		CHECK(vbe_reg[0x1] == GFX_FB_W,
 		      "VBE horizontal resolution programmed");
 		CHECK(vbe_reg[0x2] == GFX_FB_H,
