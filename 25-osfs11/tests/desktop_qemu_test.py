@@ -92,13 +92,58 @@ def color_matches(actual, expected):
     return all(abs(a - b) <= 3 for a, b in zip(actual, expected))
 
 
-def desktop_visible(frame):
-    if frame[:2] != (640, 400):
+DESKTOP_BLUE = (0, 0, 170)
+TITLEBAR_BLUE = (85, 85, 255)
+TERMINAL_BLACK = (0, 0, 0)
+TERMINAL_WHITE = (255, 255, 255)
+
+# The TTY window is centred and sized from the character grid in include/wm.h:
+# 36x9 cells of 8x16 px, 2 px border, 18 px title bar, 2 px padding.
+TERM_W, TERM_H = 296, 168
+TERM_X, TERM_Y = (320 - TERM_W) // 2, (200 - TERM_H) // 2
+# Background points, all outside the window and its 2 px shadow.
+BACKGROUND = [(2, 2), (317, 2), (2, 197), (317, 197), (5, 100), (160, 5)]
+
+
+def count_color(frame, x0, y0, x1, y1, color):
+    """How many of the sampled logical (320x200) pixels have this colour."""
+    return sum(color_matches(pixel(frame, x, y), color)
+               for y in range(y0, y1) for x in range(x0, x1))
+
+
+def background_is_blue(frame):
+    # The desktop is one flat blue. The old gradient painted green, cyan and
+    # red bands down the screen; those must not come back.
+    return all(color_matches(pixel(frame, x, y), DESKTOP_BLUE)
+               for x, y in BACKGROUND)
+
+
+def welcome_visible(frame):
+    """The startup screen: only a welcome message on the blue desktop."""
+    if frame[:2] != (640, 400) or not background_is_blue(frame):
         return False
-    samples = [(5, 5, (0, 0, 170)), (5, 60, (0, 170, 0)),
-               (5, 110, (0, 170, 170)), (5, 175, (170, 0, 0)),
-               (30, 55, (170, 170, 170)), (100, 25, (85, 85, 255))]
-    return all(color_matches(pixel(frame, x, y), color) for x, y, color in samples)
+    # No window yet: the middle of the screen is blue except for the text.
+    if not color_matches(pixel(frame, TERM_X + 4, TERM_Y + 4), DESKTOP_BLUE):
+        return False
+    return count_color(frame, 40, 84, 280, 100, TERMINAL_WHITE) > 100
+
+
+def terminal_text_pixels(frame):
+    """White pixels inside the TTY window's client area."""
+    return count_color(frame, TERM_X + 6, TERM_Y + 22,
+                       TERM_X + TERM_W - 6, TERM_Y + TERM_H - 6, TERMINAL_WHITE)
+
+
+def desktop_visible(frame):
+    if frame[:2] != (640, 400) or not background_is_blue(frame):
+        return False
+    # Focused title bar, dark terminal client area, and the banner text the
+    # terminal prints when it opens.
+    if not color_matches(pixel(frame, 160, TERM_Y + 8), TITLEBAR_BLUE):
+        return False
+    if not color_matches(pixel(frame, 160, TERM_Y + TERM_H - 20), TERMINAL_BLACK):
+        return False
+    return terminal_text_pixels(frame) > 200
 
 
 def exercise(mon, folder):
@@ -125,12 +170,21 @@ def exercise(mon, folder):
         f = mon.frame(capture)
         return f[:2] == baseline[:2] and f[2][:header_bytes] == header
 
+    def welcome():
+        f = mon.frame(capture)
+        return f if welcome_visible(f) else None
+
     for session in range(2):
         # A stale ESC in text mode must not instantly close the next session.
         mon.key("esc")
         mon.type("desktop\n")
-        frame = wait_for(graphics, "desktop windows")
-        print(f"PASS: desktop session {session + 1} is visible", flush=True)
+        # Startup shows the welcome message first, and only then the TTY window.
+        wait_for(welcome, "welcome message")
+        print(f"PASS: desktop session {session + 1} shows the welcome message",
+              flush=True)
+        frame = wait_for(graphics, "TTY window")
+        print(f"PASS: desktop session {session + 1} opens the TTY window",
+              flush=True)
         time.sleep(0.25)
         assert graphics(), "desktop closed immediately after launch"
 
@@ -146,6 +200,14 @@ def exercise(mon, folder):
             mon.key("alt", "f1")
             assert graphics(), "console shortcut corrupted the graphics display"
             print("PASS: mouse input and graphics console isolation", flush=True)
+
+            # The TTY window is a real terminal: typing must echo into it and
+            # a command must answer there, not in the text console behind it.
+            before = terminal_text_pixels(mon.frame(capture))
+            mon.type("ver\n")
+            wait_for(lambda: (f := mon.frame(capture)) and desktop_visible(f) and
+                     terminal_text_pixels(f) > before, "terminal echo and output")
+            print("PASS: the TTY window accepts typed commands", flush=True)
 
         mon.key("esc")
         wait_for(lambda: mon.tty(1).count("[desktop finished]") == session + 1,

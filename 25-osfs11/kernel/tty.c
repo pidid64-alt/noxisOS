@@ -61,6 +61,21 @@ PRIVATE void	tty_dev_write	(TTY* tty);
 PRIVATE void	tty_do_read	(TTY* tty, MESSAGE* msg);
 PRIVATE void	tty_do_write	(TTY* tty, MESSAGE* msg);
 PRIVATE void	put_key		(TTY* tty, u32 key);
+PRIVATE void	gui_put_char	(char ch);
+
+
+/* --- keystrokes for the graphics owner -------------------------------------
+ *
+ * While the desktop owns the screen the text consoles must not echo anything
+ * (in_process() already dropped every key in that case). Instead of throwing
+ * the keys away we park the translated characters here, so the GUI can run a
+ * real terminal window. TASK_DESKTOP drains this queue with
+ * tty_gui_getchar(); it is the only reader. */
+#define GUI_BUF_SIZE	64
+PRIVATE char	gui_buf[GUI_BUF_SIZE];
+PRIVATE int	gui_head;	/* next slot to write */
+PRIVATE int	gui_tail;	/* next slot to read  */
+PRIVATE int	gui_count;
 
 
 /*****************************************************************************
@@ -165,9 +180,30 @@ PRIVATE void init_tty(TTY* tty)
  *****************************************************************************/
 PUBLIC void in_process(TTY* tty, u32 key)
 {
-	/* ESC is latched by IRQ1 and polled separately by the graphics owner. */
-	if (vga_graphics_active())
+	/* ESC is latched by IRQ1 and polled separately by the graphics owner.
+	 * Every other key becomes a character for the GUI terminal instead of
+	 * leaking into (and scrolling) the text console behind the desktop. */
+	if (vga_graphics_active()) {
+		if (!(key & FLAG_EXT)) {
+			gui_put_char((char)(key & 0xFF));
+		}
+		else {
+			switch (key & MASK_RAW) {
+			case ENTER:
+				gui_put_char('\n');
+				break;
+			case BACKSPACE:
+				gui_put_char('\b');
+				break;
+			case TAB:
+				gui_put_char(' ');
+				break;
+			default:	/* ESC, F-keys, arrows: not typed text */
+				break;
+			}
+		}
 		return;
+	}
 
 	if (!(key & FLAG_EXT)) {
 		put_key(tty, key);
@@ -237,6 +273,65 @@ PRIVATE void put_key(TTY* tty, u32 key)
 			tty->ibuf_head = tty->ibuf;
 		tty->ibuf_cnt++;
 	}
+}
+
+
+/*****************************************************************************
+ *                                gui_put_char
+ *****************************************************************************/
+/**
+ * Park one translated character for the graphics owner (the desktop).
+ * The oldest character is dropped when the queue is full -- a GUI that
+ * stopped reading must never block the keyboard.
+ *
+ * @param ch  The character.
+ *****************************************************************************/
+PRIVATE void gui_put_char(char ch)
+{
+	if (gui_count == GUI_BUF_SIZE) {	/* drop the oldest */
+		gui_tail = (gui_tail + 1) % GUI_BUF_SIZE;
+		gui_count--;
+	}
+
+	gui_buf[gui_head] = ch;
+	gui_head = (gui_head + 1) % GUI_BUF_SIZE;
+	gui_count++;
+}
+
+
+/*****************************************************************************
+ *                                tty_gui_getchar
+ *****************************************************************************/
+/**
+ * Non-blocking read of one character typed while the desktop owns the screen.
+ *
+ * @return The character, or -1 when nothing is pending.
+ *****************************************************************************/
+PUBLIC int tty_gui_getchar()
+{
+	int ch;
+
+	if (gui_count == 0)
+		return -1;
+
+	ch = (unsigned char)gui_buf[gui_tail];
+	gui_tail = (gui_tail + 1) % GUI_BUF_SIZE;
+	gui_count--;
+
+	return ch;
+}
+
+
+/*****************************************************************************
+ *                                tty_gui_flush
+ *****************************************************************************/
+/**
+ * Throw away every pending GUI character. Called when the desktop starts, so
+ * whatever was typed at the text shell does not land in the new terminal.
+ *****************************************************************************/
+PUBLIC void tty_gui_flush()
+{
+	gui_head = gui_tail = gui_count = 0;
 }
 
 

@@ -29,17 +29,48 @@
 #define WM_WINDOW_MINIMIZED 2
 #define WM_WINDOW_MAXIMIZED 3
 
-/* Window colors (VGA palette indices) */
-#define WM_COLOR_DESKTOP    1   /* blue background */
+/* Window colors (VGA palette indices).
+ *
+ * The desktop is painted with a single flat colour: WM_COLOR_DESKTOP for
+ * every pixel. There is no gradient and no second/third hue -- the old
+ * "WM_COLOR_DESKTOP + y/50" ramp walked into palette entries 2 (green),
+ * 3 (cyan) and 4 (red), which is exactly what we do not want here. */
+#define WM_COLOR_DESKTOP    1   /* blue background (the whole desktop) */
 #define WM_COLOR_BORDER     8   /* dark grey */
 #define WM_COLOR_TITLEBAR   9   /* light blue */
 #define WM_COLOR_TITLE_TEXT 15  /* white */
 #define WM_COLOR_WINDOW_BG  7   /* light grey */
 #define WM_COLOR_SHADOW     0   /* black */
+#define WM_COLOR_TERM_BG    0   /* black -- terminal client area */
+#define WM_COLOR_TERM_TEXT  15  /* white -- terminal text and cursor */
 
 /* Mouse cursor */
 #define WM_CURSOR_WIDTH     8
 #define WM_CURSOR_HEIGHT    11
+
+/* Terminal (TTY) window ---------------------------------------------------
+ *
+ * One window may host a text terminal. Its character cell is the size of a
+ * glyph of the shared 8x16 font (WM_FONT_W/WM_FONT_H in kernel/wm_font.h);
+ * the values are mirrored here so wm.h stays free of font internals. */
+#define WM_TERM_CELL_W      8
+#define WM_TERM_CELL_H      16
+#define WM_TERM_COLS        36
+#define WM_TERM_ROWS        9
+#define WM_TERM_PAD         2   /* pixels between the client edge and text */
+
+/* Outer window size that makes the client area fit COLS x ROWS cells. */
+#define WM_TERM_WIN_W  (WM_TERM_COLS * WM_TERM_CELL_W + \
+                        2 * WM_BORDER_WIDTH + 2 * WM_TERM_PAD)
+#define WM_TERM_WIN_H  (WM_TERM_ROWS * WM_TERM_CELL_H + WM_TITLE_HEIGHT + \
+                        WM_BORDER_WIDTH + 2 * WM_TERM_PAD)
+
+/* Terminal text buffer: a fixed grid of characters plus a cursor. */
+typedef struct s_terminal {
+	char cells[WM_TERM_ROWS][WM_TERM_COLS];
+	int  cur_col, cur_row;   /* cursor cell */
+	int  win_id;             /* hosting window, -1 when there is none */
+} TERMINAL;
 
 /* Window structure */
 typedef struct s_window {
@@ -62,6 +93,7 @@ typedef struct s_desktop {
 	int drag_offset_y;
 	u8 *framebuffer;       /* pointer to graphics buffer */
 	int running;           /* 1 if desktop is active */
+	TERMINAL term;         /* the TTY window's text buffer */
 } DESKTOP;
 
 /* Window manager functions */
@@ -69,6 +101,7 @@ PUBLIC void wm_init(DESKTOP *desk, u8 *fb);
 PUBLIC int wm_create_window(DESKTOP *desk, int x, int y, int w, int h, const char *title);
 PUBLIC void wm_close_window(DESKTOP *desk, int win_id);
 PUBLIC void wm_draw_desktop(DESKTOP *desk);
+PUBLIC void wm_draw_welcome(DESKTOP *desk, const char *title, const char *subtitle);
 PUBLIC void wm_draw_window(DESKTOP *desk, int win_id);
 PUBLIC void wm_paint_all(DESKTOP *desk);
 PUBLIC void wm_draw_cursor(DESKTOP *desk);
@@ -76,6 +109,13 @@ PUBLIC void wm_update_mouse(DESKTOP *desk, int dx, int dy, int buttons);
 PUBLIC void wm_handle_click(DESKTOP *desk, int x, int y);
 PUBLIC void wm_focus_window(DESKTOP *desk, int win_id);
 PUBLIC int wm_hit_test(DESKTOP *desk, int x, int y);
+
+/* Terminal (TTY window) functions */
+PUBLIC int  wm_term_open(DESKTOP *desk, const char *title);
+PUBLIC void wm_term_clear(DESKTOP *desk);
+PUBLIC void wm_term_putc(DESKTOP *desk, char c);
+PUBLIC void wm_term_puts(DESKTOP *desk, const char *s);
+PUBLIC void wm_term_backspace(DESKTOP *desk);
 
 /* PS/2 Mouse driver functions */
 PUBLIC void mouse_init(void);

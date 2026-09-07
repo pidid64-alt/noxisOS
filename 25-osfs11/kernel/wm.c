@@ -134,6 +134,189 @@ PRIVATE void wm_draw_text(u8 *fb, int x, int y, const char *text, u8 color,
 PRIVATE void wm_restack(DESKTOP *desk, int front);
 
 /*****************************************************************************
+ *                                Terminal (TTY window)
+ *****************************************************************************
+ * A single window may host a text terminal: a WM_TERM_ROWS x WM_TERM_COLS
+ * grid of characters that scrolls up when the cursor leaves the bottom row.
+ * The window manager only owns the buffer and its rendering; line editing
+ * and command handling live in kernel/desktop.c.
+ *****************************************************************************/
+
+/*****************************************************************************
+ *                                wm_term_clear
+ *****************************************************************************/
+PUBLIC void wm_term_clear(DESKTOP *desk)
+{
+	int r, c;
+
+	for (r = 0; r < WM_TERM_ROWS; r++)
+		for (c = 0; c < WM_TERM_COLS; c++)
+			desk->term.cells[r][c] = ' ';
+
+	desk->term.cur_row = 0;
+	desk->term.cur_col = 0;
+}
+
+/*****************************************************************************
+ *                                wm_term_scroll
+ *****************************************************************************/
+PRIVATE void wm_term_scroll(DESKTOP *desk)
+{
+	int r, c;
+
+	for (r = 0; r < WM_TERM_ROWS - 1; r++)
+		for (c = 0; c < WM_TERM_COLS; c++)
+			desk->term.cells[r][c] = desk->term.cells[r + 1][c];
+
+	for (c = 0; c < WM_TERM_COLS; c++)
+		desk->term.cells[WM_TERM_ROWS - 1][c] = ' ';
+
+	desk->term.cur_row = WM_TERM_ROWS - 1;
+}
+
+/*****************************************************************************
+ *                                wm_term_open
+ *****************************************************************************
+ * Create the terminal window (centred, sized to fit the character grid) and
+ * make it the terminal host. Returns the window id, or -1 on failure.
+ *****************************************************************************/
+PUBLIC int wm_term_open(DESKTOP *desk, const char *title)
+{
+	int id = wm_create_window(desk,
+	                          (GFX_FB_W - WM_TERM_WIN_W) / 2,
+	                          (GFX_FB_H - WM_TERM_WIN_H) / 2,
+	                          WM_TERM_WIN_W, WM_TERM_WIN_H, title);
+
+	if (id < 0)
+		return -1;
+
+	desk->term.win_id = id;
+	wm_term_clear(desk);
+	wm_focus_window(desk, id);
+
+	return id;
+}
+
+/*****************************************************************************
+ *                                wm_term_putc
+ *****************************************************************************
+ * Print one character at the cursor. '\n' starts a new line, the grid
+ * scrolls when the cursor runs past the last row.
+ *****************************************************************************/
+PUBLIC void wm_term_putc(DESKTOP *desk, char c)
+{
+	if (c == '\n') {
+		desk->term.cur_col = 0;
+		desk->term.cur_row++;
+	}
+	else if (c == '\b') {
+		wm_term_backspace(desk);
+		return;
+	}
+	else {
+		if (c < 32 || c > 126)		/* not printable: ignore */
+			return;
+		desk->term.cells[desk->term.cur_row][desk->term.cur_col] = c;
+		desk->term.cur_col++;
+		if (desk->term.cur_col >= WM_TERM_COLS) {
+			desk->term.cur_col = 0;
+			desk->term.cur_row++;
+		}
+	}
+
+	if (desk->term.cur_row >= WM_TERM_ROWS)
+		wm_term_scroll(desk);
+}
+
+/*****************************************************************************
+ *                                wm_term_puts
+ *****************************************************************************/
+PUBLIC void wm_term_puts(DESKTOP *desk, const char *s)
+{
+	if (!s)
+		return;
+
+	while (*s)
+		wm_term_putc(desk, *s++);
+}
+
+/*****************************************************************************
+ *                                wm_term_backspace
+ *****************************************************************************
+ * Erase the character left of the cursor. Stops at the start of the grid.
+ *****************************************************************************/
+PUBLIC void wm_term_backspace(DESKTOP *desk)
+{
+	if (desk->term.cur_col > 0) {
+		desk->term.cur_col--;
+	}
+	else if (desk->term.cur_row > 0) {
+		desk->term.cur_row--;
+		desk->term.cur_col = WM_TERM_COLS - 1;
+	}
+	else {
+		return;
+	}
+
+	desk->term.cells[desk->term.cur_row][desk->term.cur_col] = ' ';
+}
+
+/*****************************************************************************
+ *                                wm_draw_terminal
+ *****************************************************************************
+ * Paint the terminal grid (and its cursor) inside a window's client area.
+ *****************************************************************************/
+PRIVATE void wm_draw_terminal(DESKTOP *desk, int win_id)
+{
+	WINDOW *win = &desk->windows[win_id];
+	u8 *fb = desk->framebuffer;
+	int x0 = win->x + WM_BORDER_WIDTH + WM_TERM_PAD;
+	int y0 = win->y + WM_TITLE_HEIGHT + WM_TERM_PAD;
+	int r, c;
+
+	/* Dark client area: text terminals are not light grey. */
+	wm_fill_rect(fb, win->x + WM_BORDER_WIDTH, win->y + WM_TITLE_HEIGHT,
+	             win->x + win->width - WM_BORDER_WIDTH - 1,
+	             win->y + win->height - WM_BORDER_WIDTH - 1,
+	             WM_COLOR_TERM_BG);
+
+	for (r = 0; r < WM_TERM_ROWS; r++) {
+		int y = y0 + r * WM_TERM_CELL_H;
+
+		/* Never draw a row that would leave the client area. */
+		if (y + WM_TERM_CELL_H >
+		    win->y + win->height - WM_BORDER_WIDTH)
+			break;
+
+		for (c = 0; c < WM_TERM_COLS; c++) {
+			int x = x0 + c * WM_TERM_CELL_W;
+
+			if (x + WM_TERM_CELL_W >
+			    win->x + win->width - WM_BORDER_WIDTH)
+				break;
+
+			wm_draw_char(fb, x, y, desk->term.cells[r][c],
+			             WM_COLOR_TERM_TEXT);
+		}
+	}
+
+	/* Block cursor, only while the terminal window has the focus. */
+	if (win_id == desk->active_window) {
+		int cx = x0 + desk->term.cur_col * WM_TERM_CELL_W;
+		int cy = y0 + desk->term.cur_row * WM_TERM_CELL_H;
+
+		if (cx + WM_TERM_CELL_W <=
+		    win->x + win->width - WM_BORDER_WIDTH &&
+		    cy + WM_TERM_CELL_H <=
+		    win->y + win->height - WM_BORDER_WIDTH)
+			wm_fill_rect(fb, cx, cy + WM_TERM_CELL_H - 2,
+			             cx + WM_TERM_CELL_W - 1,
+			             cy + WM_TERM_CELL_H - 1,
+			             WM_COLOR_TERM_TEXT);
+	}
+}
+
+/*****************************************************************************
  *                                wm_init
  *****************************************************************************
  * Initialize the desktop manager structure.
@@ -157,6 +340,9 @@ PUBLIC void wm_init(DESKTOP *desk, u8 *fb)
 		desk->windows[i].z_order = 0;
 		desk->windows[i].content = 0;
 	}
+
+	desk->term.win_id = -1;
+	wm_term_clear(desk);
 }
 
 /*****************************************************************************
@@ -226,6 +412,10 @@ PUBLIC void wm_close_window(DESKTOP *desk, int win_id)
 	if (desk->active_window == win_id)
 		desk->active_window = -1;
 
+	/* A closed window can no longer host the terminal. */
+	if (desk->term.win_id == win_id)
+		desk->term.win_id = -1;
+
 	/* Close the gap so the remaining z_orders stay 1..N. */
 	wm_restack(desk, -1);
 }
@@ -237,18 +427,48 @@ PUBLIC void wm_close_window(DESKTOP *desk, int win_id)
  *****************************************************************************/
 PUBLIC void wm_draw_desktop(DESKTOP *desk)
 {
-	/* Fill with desktop color */
+	/* One flat colour for the whole background. The previous version
+	 * added a "gradient" of WM_COLOR_DESKTOP + y/50, which in the VGA
+	 * palette is blue, green, cyan and red -- four different colours
+	 * instead of the single blue the desktop is supposed to have. */
 	memset(desk->framebuffer, WM_COLOR_DESKTOP, GFX_FB_BYTES);
+}
 
-	/* Draw a simple pattern - horizontal gradient */
-	int y;
-	for (y = 0; y < GFX_FB_H; y++) {
-		u8 color = WM_COLOR_DESKTOP + (y / 50);
-		if (color > WM_COLOR_DESKTOP + 3)
-			color = WM_COLOR_DESKTOP + 3;
-		wm_hline(desk->framebuffer, 0, GFX_FB_W - 1, y, color);
+/*****************************************************************************
+ *                                wm_draw_welcome
+ *****************************************************************************
+ * Boot splash: the plain blue desktop with one or two centred lines of text.
+ * Shown right after the desktop starts, before the TTY window opens.
+ * `subtitle' may be 0.
+ *****************************************************************************/
+PUBLIC void wm_draw_welcome(DESKTOP *desk, const char *title,
+                            const char *subtitle)
+{
+	int len, x, y;
+
+	wm_draw_desktop(desk);
+
+	if (title) {
+		for (len = 0; title[len]; len++)
+			;
+		x = (GFX_FB_W - len * WM_FONT_W) / 2;
+		if (x < 0) x = 0;
+		y = GFX_FB_H / 2 - WM_FONT_H;
+		wm_draw_text(desk->framebuffer, x, y, title,
+		             WM_COLOR_TITLE_TEXT, GFX_FB_W - x);
+	}
+
+	if (subtitle) {
+		for (len = 0; subtitle[len]; len++)
+			;
+		x = (GFX_FB_W - len * WM_FONT_W) / 2;
+		if (x < 0) x = 0;
+		y = GFX_FB_H / 2 + WM_FONT_H / 2;
+		wm_draw_text(desk->framebuffer, x, y, subtitle,
+		             WM_COLOR_TITLE_TEXT, GFX_FB_W - x);
 	}
 }
+
 
 /*****************************************************************************
  *                                wm_draw_window
@@ -293,6 +513,10 @@ PUBLIC void wm_draw_window(DESKTOP *desk, int win_id)
 	wm_fill_rect(fb, x + WM_BORDER_WIDTH, y + WM_TITLE_HEIGHT,
 	             x + w - WM_BORDER_WIDTH - 1,
 	             y + h - WM_BORDER_WIDTH - 1, WM_COLOR_WINDOW_BG);
+
+	/* The terminal window paints its own (dark) client area and text. */
+	if (win_id == desk->term.win_id)
+		wm_draw_terminal(desk, win_id);
 
 	/* Bevel: a light inner edge on the top and left of the border, so
 	 * overlapping windows are still distinguishable where they touch. */
