@@ -52,9 +52,21 @@ typedef unsigned int	u32;
 #define WM_COLOR_TITLE_TEXT 15
 #define WM_COLOR_WINDOW_BG  7
 #define WM_COLOR_SHADOW     0
+#define WM_COLOR_TERM_BG    0
+#define WM_COLOR_TERM_TEXT  15
 
 #define WM_CURSOR_WIDTH     8
 #define WM_CURSOR_HEIGHT    11
+
+#define WM_TERM_CELL_W      8
+#define WM_TERM_CELL_H      16
+#define WM_TERM_COLS        36
+#define WM_TERM_ROWS        9
+#define WM_TERM_PAD         2
+#define WM_TERM_WIN_W  (WM_TERM_COLS * WM_TERM_CELL_W + \
+                        2 * WM_BORDER_WIDTH + 2 * WM_TERM_PAD)
+#define WM_TERM_WIN_H  (WM_TERM_ROWS * WM_TERM_CELL_H + WM_TITLE_HEIGHT + \
+                        WM_BORDER_WIDTH + 2 * WM_TERM_PAD)
 
 typedef struct s_window {
 	int x, y;
@@ -65,13 +77,23 @@ typedef struct s_window {
 	u8 *content;
 } WINDOW;
 
+typedef struct s_terminal {
+	char cells[WM_TERM_ROWS][WM_TERM_COLS];
+	int  cur_col, cur_row;
+	int  win_id;
+} TERMINAL;
+
 typedef struct s_desktop {
 	WINDOW windows[WM_MAX_WINDOWS];
 	int active_window;
 	int mouse_x, mouse_y;
 	int mouse_buttons;
+	int drag_window;
+	int drag_offset_x;
+	int drag_offset_y;
 	u8 *framebuffer;
 	int running;
+	TERMINAL term;
 } DESKTOP;
 
 /* mirrored prototypes (see include/wm.h) */
@@ -86,6 +108,12 @@ PUBLIC void wm_update_mouse(DESKTOP *desk, int dx, int dy, int buttons);
 PUBLIC void wm_handle_click(DESKTOP *desk, int x, int y);
 PUBLIC void wm_focus_window(DESKTOP *desk, int win_id);
 PUBLIC int wm_hit_test(DESKTOP *desk, int x, int y);
+PUBLIC void wm_draw_welcome(DESKTOP *desk, const char *title, const char *subtitle);
+PUBLIC int  wm_term_open(DESKTOP *desk, const char *title);
+PUBLIC void wm_term_clear(DESKTOP *desk);
+PUBLIC void wm_term_putc(DESKTOP *desk, char c);
+PUBLIC void wm_term_puts(DESKTOP *desk, const char *s);
+PUBLIC void wm_term_backspace(DESKTOP *desk);
 
 /* Guard bytes around the fake framebuffer so any out-of-bounds write by a
  * drawing primitive is caught instead of silently corrupting the heap. */
@@ -239,14 +267,131 @@ int main(void)
 	memset(fb, 0xCC, GFX_FB_BYTES);
 	wm_draw_desktop(&desk);
 	{
-		int unpainted = 0, y, x;
+		int unpainted = 0, other = 0, y, x;
 		for (y = 0; y < GFX_FB_H; y++)
-			for (x = 0; x < GFX_FB_W; x++)
-				if (fb[y * GFX_FB_W + x] == 0xCC)
+			for (x = 0; x < GFX_FB_W; x++) {
+				u8 c = fb[y * GFX_FB_W + x];
+				if (c == 0xCC)
 					unpainted++;
+				else if (c != WM_COLOR_DESKTOP)
+					other++;
+			}
 		CHECK(unpainted == 0,			"draw_desktop: whole screen painted");
+		/* The background is one flat blue: no gradient into the green,
+		 * cyan and red palette entries next to WM_COLOR_DESKTOP. */
+		CHECK(other == 0,			"draw_desktop: every pixel is the single desktop blue");
 	}
 	CHECK(guard_ok(fb),				"draw_desktop: no out-of-bounds write");
+
+	/* === wm_draw_welcome: blue background + centred white text === */
+	wm_init(&desk, fb);
+	memset(fb, 0xCC, GFX_FB_BYTES);
+	wm_draw_welcome(&desk, "Welcome to noxisOS", 0);
+	{
+		int y, x, text = 0, other = 0, min_x = GFX_FB_W, max_x = -1;
+		for (y = 0; y < GFX_FB_H; y++)
+			for (x = 0; x < GFX_FB_W; x++) {
+				u8 c = fb[y * GFX_FB_W + x];
+				if (c == WM_COLOR_TITLE_TEXT) {
+					text++;
+					if (x < min_x) min_x = x;
+					if (x > max_x) max_x = x;
+				}
+				else if (c != WM_COLOR_DESKTOP) {
+					other++;
+				}
+			}
+		CHECK(text > 100,			"draw_welcome: the message is rendered");
+		CHECK(other == 0,			"draw_welcome: only blue behind the message");
+		CHECK(min_x > 20 && max_x < GFX_FB_W - 20,
+							"draw_welcome: message is centred");
+	}
+	CHECK(guard_ok(fb),				"draw_welcome: no out-of-bounds write");
+
+	/* === terminal window: buffer, scrolling and rendering === */
+	wm_init(&desk, fb);
+	CHECK(desk.term.win_id == -1,			"wm_init: no terminal window yet");
+	{
+		int id = wm_term_open(&desk, "TTY");
+		int r, c, dirty = 0;
+
+		CHECK(id >= 0,				"term_open: window created");
+		CHECK(desk.term.win_id == id,		"term_open: terminal is attached");
+		CHECK(desk.active_window == id,		"term_open: terminal is focused");
+		CHECK(desk.windows[id].width == WM_TERM_WIN_W &&
+		      desk.windows[id].height == WM_TERM_WIN_H,
+							"term_open: window fits the character grid");
+		CHECK(desk.windows[id].x >= 0 && desk.windows[id].y >= 0 &&
+		      desk.windows[id].x + desk.windows[id].width <= GFX_FB_W &&
+		      desk.windows[id].y + desk.windows[id].height <= GFX_FB_H,
+							"term_open: window is on screen");
+
+		for (r = 0; r < WM_TERM_ROWS; r++)
+			for (c = 0; c < WM_TERM_COLS; c++)
+				if (desk.term.cells[r][c] != ' ')
+					dirty++;
+		CHECK(dirty == 0,			"term_open: grid starts blank");
+
+		wm_term_puts(&desk, "hi\n");
+		CHECK(desk.term.cells[0][0] == 'h' && desk.term.cells[0][1] == 'i',
+							"term_puts: text lands in the grid");
+		CHECK(desk.term.cur_row == 1 && desk.term.cur_col == 0,
+							"term_puts: newline moves to the next row");
+
+		wm_term_putc(&desk, 'x');
+		wm_term_backspace(&desk);
+		CHECK(desk.term.cells[1][0] == ' ' && desk.term.cur_col == 0,
+							"term_backspace: erases the last character");
+		wm_term_backspace(&desk);
+		CHECK(desk.term.cur_row == 0 && desk.term.cur_col == WM_TERM_COLS - 1,
+							"term_backspace: wraps to the previous row");
+		desk.term.cur_row = 0; desk.term.cur_col = 0;
+		wm_term_clear(&desk);
+
+		/* Overflowing the bottom row scrolls instead of writing out of
+		 * the buffer. */
+		for (r = 0; r < WM_TERM_ROWS + 3; r++) {
+			wm_term_putc(&desk, (char)('A' + r));
+			wm_term_putc(&desk, '\n');
+		}
+		CHECK(desk.term.cur_row == WM_TERM_ROWS - 1,
+							"term_putc: cursor stays on the last row");
+		CHECK(desk.term.cells[WM_TERM_ROWS - 2][0] == (char)('A' + WM_TERM_ROWS + 2),
+							"term_putc: the grid scrolled up");
+
+		/* Long lines wrap inside the grid, never past its last column. */
+		wm_term_clear(&desk);
+		for (r = 0; r < WM_TERM_COLS + 5; r++)
+			wm_term_putc(&desk, '#');
+		CHECK(desk.term.cur_row == 1 && desk.term.cur_col == 5,
+							"term_putc: long line wraps to the next row");
+
+		/* Rendering stays inside the window and paints real glyphs. */
+		memset(fb, 0, GFX_FB_BYTES);
+		wm_draw_window(&desk, id);
+		{
+			int x, y, stray = 0, glyph = 0;
+			int x0 = desk.windows[id].x, y0 = desk.windows[id].y;
+			int w = desk.windows[id].width, h = desk.windows[id].height;
+			for (y = 0; y < GFX_FB_H; y++)
+				for (x = 0; x < GFX_FB_W; x++) {
+					int inside = (x >= x0 - 1 && x <= x0 + w + 1 &&
+						      y >= y0 - 1 && y <= y0 + h + 1);
+					if (!inside && fb[y * GFX_FB_W + x] != 0)
+						stray++;
+					if (inside && y > y0 + WM_TITLE_HEIGHT &&
+					    fb[y * GFX_FB_W + x] == WM_COLOR_TERM_TEXT)
+						glyph++;
+				}
+			CHECK(stray == 0,		"draw_terminal: nothing painted outside the window");
+			CHECK(glyph > 100,		"draw_terminal: terminal text is rendered");
+		}
+		CHECK(guard_ok(fb),			"draw_terminal: no out-of-bounds write");
+
+		/* Closing the window detaches the terminal. */
+		wm_close_window(&desk, id);
+		CHECK(desk.term.win_id == -1,		"close: terminal detaches with its window");
+	}
 
 	/* === wm_draw_window: stays inside the window + its shadow === */
 	wm_init(&desk, fb);

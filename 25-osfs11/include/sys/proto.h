@@ -67,6 +67,8 @@ PUBLIC int  kb_poll_esc();
 /* tty.c */
 PUBLIC void task_tty();
 PUBLIC void in_process(TTY* p_tty, u32 key);
+PUBLIC int  tty_gui_getchar();	/* keys typed while the desktop owns the screen */
+PUBLIC void tty_gui_flush();
 PUBLIC void dump_tty_buf();	/* for debug only */
 
 /* systask.c */
@@ -92,12 +94,18 @@ PUBLIC void wm_init(DESKTOP *desk, u8 *fb);
 PUBLIC int wm_create_window(DESKTOP *desk, int x, int y, int w, int h, const char *title);
 PUBLIC void wm_close_window(DESKTOP *desk, int win_id);
 PUBLIC void wm_draw_desktop(DESKTOP *desk);
+PUBLIC void wm_draw_welcome(DESKTOP *desk, const char *title, const char *subtitle);
 PUBLIC void wm_draw_window(DESKTOP *desk, int win_id);
 PUBLIC void wm_draw_cursor(DESKTOP *desk);
 PUBLIC void wm_update_mouse(DESKTOP *desk, int dx, int dy, int buttons);
 PUBLIC void wm_handle_click(DESKTOP *desk, int x, int y);
 PUBLIC void wm_focus_window(DESKTOP *desk, int win_id);
 PUBLIC int wm_hit_test(DESKTOP *desk, int x, int y);
+PUBLIC int  wm_term_open(DESKTOP *desk, const char *title);
+PUBLIC void wm_term_clear(DESKTOP *desk);
+PUBLIC void wm_term_putc(DESKTOP *desk, char c);
+PUBLIC void wm_term_puts(DESKTOP *desk, const char *s);
+PUBLIC void wm_term_backspace(DESKTOP *desk);
 
 /* fs/main.c */
 PUBLIC void			task_fs();
