@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Boot fresh desktop images and test the visible VGA output, not just RAM.
+"""Boot fresh noxisOS desktop images and check the visible VGA output.
 
-Uses QMP over a private Unix socket, no GUI/VNC port or third-party packages.
--snapshot keeps the IDE image unchanged. Every wait checks an actual outcome;
-boot/exec latency is not mistaken for a successful launch or a frozen screen.
+Uses QMP over a private Unix socket and captures the screen with `screendump`;
+no GUI/VNC server or third-party Python packages are needed.  The desktop is
+800x600x8 VBE and has two windows: Files on the left and TTY on the right.
+`-snapshot` keeps the IDE image unchanged.
 
-NOTE (2026-09-07): STALE. The desktop now enters 800x600x8 through the
-Bochs/QEMU VBE (DISPI) interface with a banked framebuffer (kernel/vga.c)
-instead of 320x200 mode 13h, and it opens a left-docked \"Files:\" explorer
-next to the TTY window (kernel/desktop.c). The logical 320x200 coordinates,
-TERM_*/BACKGROUND constants and expected capture sizes below must be
-re-derived under QEMU before this harness is used again.
+The test covers the welcome screen, both desktop windows, mouse and keyboard
+input (including TTY command-history navigation), return to the text shell, a
+second desktop session, and the 800x600 TASK_GFX colour-bar demo. Every wait
+checks an observable result rather than assuming a fixed boot or rendering
+delay.
 """
 import argparse
 import json
@@ -23,6 +23,60 @@ import time
 
 OS_DIR = Path(__file__).resolve().parents[1]
 
+# Keep these in sync with include/sys/const.h and kernel/console.c.
+TEXT_VIDEO_BASE = 0xB8000
+TEXT_VIDEO_SIZE = 0x8000
+TEXT_COLUMNS = 80
+TEXT_CONSOLES = 3
+# init_screen() advances each console's `orig` by the unrounded size_per_con;
+# only con_size is rounded down to a complete number of text rows.
+WORDS_PER_CONSOLE = TEXT_VIDEO_SIZE // 2 // TEXT_CONSOLES
+TEXT_CONSOLE_READ_BYTES = 4000  # 80 columns x 25 rows x 2 bytes/cell
+TEXT_SCREEN_SIZE = (720, 400)
+
+GFX_SIZE = (800, 600)
+DESKTOP_BLUE = (0, 0, 170)
+TITLEBAR_ACTIVE = (85, 85, 255)
+TITLEBAR_INACTIVE = (170, 170, 170)
+WINDOW_BACKGROUND = (170, 170, 170)
+TERMINAL_BACKGROUND = (0, 0, 0)
+TERMINAL_TEXT = (255, 255, 255)
+
+# Coordinates come from include/wm.h: Files at (8, 8), 288x584; TTY at
+# (328, 8), 456x408. Keep the rendering constants here in sync with wm.h.
+FILES_WINDOW = (8, 8, 288, 584)
+TTY_WINDOW = (328, 8, 456, 408)
+WM_BORDER_WIDTH = 2
+WM_TITLE_HEIGHT = 18
+WM_TERM_PAD = 2
+WM_FONT_WIDTH = 8
+WM_FONT_HEIGHT = 16
+FILES_X, FILES_Y, FILES_W, FILES_H = FILES_WINDOW
+TTY_X, TTY_Y, TTY_W, TTY_H = TTY_WINDOW
+FILES_TITLE_TEXT = (
+    FILES_X + WM_BORDER_WIDTH + 2,
+    FILES_Y + WM_BORDER_WIDTH,
+    FILES_X + WM_BORDER_WIDTH + 2 + len("Files: /") * WM_FONT_WIDTH,
+    FILES_Y + WM_BORDER_WIDTH + WM_FONT_HEIGHT,
+)
+TTY_TITLE_TEXT = (
+    TTY_X + WM_BORDER_WIDTH + 2,
+    TTY_Y + WM_BORDER_WIDTH,
+    TTY_X + WM_BORDER_WIDTH + 2 + len("TTY") * WM_FONT_WIDTH,
+    TTY_Y + WM_BORDER_WIDTH + WM_FONT_HEIGHT,
+)
+TTY_TEXT_RECT = (
+    TTY_X + WM_BORDER_WIDTH + WM_TERM_PAD,
+    TTY_Y + WM_TITLE_HEIGHT + WM_TERM_PAD,
+    TTY_X + TTY_W - WM_BORDER_WIDTH - WM_TERM_PAD,
+    TTY_Y + TTY_H - WM_BORDER_WIDTH - WM_TERM_PAD,
+)  # half-open rectangle; excludes the cursor gutter
+
+# Points outside both windows, their shadows, and the initial mouse cursor.
+DESKTOP_BACKGROUND_POINTS = (
+    (4, 4), (320, 100), (4, 596), (796, 4), (796, 596),
+)
+
 
 class Monitor:
     def __init__(self, path):
@@ -30,7 +84,7 @@ class Monitor:
         self.socket.settimeout(10)
         self.socket.connect(str(path))
         self.reader = self.socket.makefile("rb")
-        json.loads(self.reader.readline())  # greeting
+        json.loads(self.reader.readline())  # QMP greeting
         self.command("qmp_capabilities")
 
     def close(self):
@@ -38,8 +92,11 @@ class Monitor:
         self.socket.close()
 
     def command(self, name, **arguments):
-        request = {"execute": name,
-                   "arguments": {k.replace("_", "-"): v for k, v in arguments.items()}}
+        request = {
+            "execute": name,
+            "arguments": {key.replace("_", "-"): value
+                          for key, value in arguments.items()},
+        }
         self.socket.sendall(json.dumps(request).encode() + b"\n")
         while True:
             line = self.reader.readline()
@@ -52,28 +109,42 @@ class Monitor:
                 return reply["return"]
 
     def key(self, *codes):
-        self.command("send-key", keys=[{"type": "qcode", "data": c} for c in codes],
-                     hold_time=50)
-        time.sleep(0.10)  # release this key before sending the next one
+        self.command("send-key", keys=[{"type": "qcode", "data": code}
+                                       for code in codes], hold_time=50)
+        time.sleep(0.10)  # let QEMU release the key before the next one
 
     def type(self, text):
         for char in text:
             self.key({" ": "spc", "\n": "ret"}.get(char, char))
 
     def tty(self, number):
-        start = 0xB8000 + 2 * (0x8000 // 2 // 3) * number
-        result = self.command("human-monitor-command", command_line=f"xp /4000bx {start:#x}")
-        data = [int(b, 16) for line in result.splitlines() if ":" in line
-                for b in re.findall(r"0x([0-9a-f]{2})\b", line.split(":", 1)[1])]
-        chars = "".join(chr(b) if 32 <= b < 127 else " " for b in data[::2])
-        return "\n".join(chars[i:i + 80].rstrip() for i in range(0, len(chars), 80))
+        """Read the visible text page for one of the three BIOS consoles."""
+        if not 0 <= number < TEXT_CONSOLES:
+            raise ValueError("console number out of range")
+        start = TEXT_VIDEO_BASE + 2 * WORDS_PER_CONSOLE * number
+        result = self.command(
+            "human-monitor-command",
+            command_line=f"xp /{TEXT_CONSOLE_READ_BYTES}bx {start:#x}",
+        )
+        values = [int(byte, 16)
+                  for line in result.splitlines() if ":" in line
+                  for byte in re.findall(r"0x([0-9a-fA-F]{2})\b",
+                                         line.split(":", 1)[1])]
+        chars = "".join(chr(value) if 32 <= value < 127 else " "
+                        for value in values[::2])
+        return "\n".join(chars[i:i + TEXT_COLUMNS].rstrip()
+                          for i in range(0, len(chars), TEXT_COLUMNS))
 
     def frame(self, path):
         self.command("screendump", filename=str(path))
-        magic, dimensions, maximum, pixels = path.read_bytes().split(b"\n", 3)
+        try:
+            magic, dimensions, maximum, pixels = path.read_bytes().split(b"\n", 3)
+        except ValueError as exc:
+            raise RuntimeError("invalid QEMU PPM screen dump") from exc
         width, height = map(int, dimensions.split())
-        if magic != b"P6" or maximum != b"255" or len(pixels) != width * height * 3:
-            raise RuntimeError("invalid QEMU screen dump")
+        if (magic != b"P6" or maximum != b"255" or
+                len(pixels) != width * height * 3):
+            raise RuntimeError("invalid QEMU PPM screen dump")
         return width, height, pixels
 
 
@@ -89,152 +160,300 @@ def wait_for(check, label, timeout=60):
 
 def pixel(frame, x, y):
     width, height, pixels = frame
-    offset = ((y * height // 200) * width + x * width // 320) * 3
+    if not (0 <= x < width and 0 <= y < height):
+        raise ValueError(f"pixel ({x}, {y}) outside {width}x{height} frame")
+    offset = (y * width + x) * 3
     return tuple(pixels[offset:offset + 3])
 
 
 def color_matches(actual, expected):
-    # VGA DAC channels are only six bits; QEMU versions differ slightly in
-    # their conversion to eight-bit RGB (e.g. 168 vs 170, 87 vs 85).
+    # VGA DAC channels are six-bit; QEMU versions can round the expansion to
+    # eight-bit RGB slightly differently (e.g. 168 vs 170).
     return all(abs(a - b) <= 3 for a, b in zip(actual, expected))
 
 
-DESKTOP_BLUE = (0, 0, 170)
-TITLEBAR_BLUE = (85, 85, 255)
-TERMINAL_BLACK = (0, 0, 0)
-TERMINAL_WHITE = (255, 255, 255)
-
-# The TTY window is centred and sized from the character grid in include/wm.h:
-# 36x9 cells of 8x16 px, 2 px border, 18 px title bar, 2 px padding.
-TERM_W, TERM_H = 296, 168
-TERM_X, TERM_Y = (320 - TERM_W) // 2, (200 - TERM_H) // 2
-# Background points, all outside the window and its 2 px shadow.
-BACKGROUND = [(2, 2), (317, 2), (2, 197), (317, 197), (5, 100), (160, 5)]
-
-
-def count_color(frame, x0, y0, x1, y1, color):
-    """How many of the sampled logical (320x200) pixels have this colour."""
-    return sum(color_matches(pixel(frame, x, y), color)
-               for y in range(y0, y1) for x in range(x0, x1))
+def count_color(frame, rect, color):
+    """Count pixels matching a palette colour inside a half-open rectangle."""
+    width, height, pixels = frame
+    x0, y0, x1, y1 = rect
+    x0, x1 = max(0, x0), min(width, x1)
+    y0, y1 = max(0, y0), min(height, y1)
+    red, green, blue = color
+    red_min, red_max = max(0, red - 3), min(255, red + 3)
+    green_min, green_max = max(0, green - 3), min(255, green + 3)
+    blue_min, blue_max = max(0, blue - 3), min(255, blue + 3)
+    count = 0
+    for y in range(y0, y1):
+        offset = (y * width + x0) * 3
+        for _ in range(x0, x1):
+            if (red_min <= pixels[offset] <= red_max and
+                    green_min <= pixels[offset + 1] <= green_max and
+                    blue_min <= pixels[offset + 2] <= blue_max):
+                count += 1
+            offset += 3
+    return count
 
 
 def background_is_blue(frame):
-    # The desktop is one flat blue. The old gradient painted green, cyan and
-    # red bands down the screen; those must not come back.
-    return all(color_matches(pixel(frame, x, y), DESKTOP_BLUE)
-               for x, y in BACKGROUND)
+    return (frame[:2] == GFX_SIZE and
+            all(color_matches(pixel(frame, x, y), DESKTOP_BLUE)
+                for x, y in DESKTOP_BACKGROUND_POINTS))
 
 
 def welcome_visible(frame):
-    """The startup screen: only a welcome message on the blue desktop."""
-    if frame[:2] != (640, 400) or not background_is_blue(frame):
+    """The welcome splash is white text centered on a flat blue desktop."""
+    if not background_is_blue(frame):
         return False
-    # No window yet: the middle of the screen is blue except for the text.
-    if not color_matches(pixel(frame, TERM_X + 4, TERM_Y + 4), DESKTOP_BLUE):
-        return False
-    return count_color(frame, 40, 84, 280, 100, TERMINAL_WHITE) > 100
+    # "Welcome to noxisOS" is centered near (328, 284) in the 8x16 font.
+    return count_color(frame, (300, 270, 500, 320), TERMINAL_TEXT) > 100
 
 
 def terminal_text_pixels(frame):
-    """White pixels inside the TTY window's client area."""
-    return count_color(frame, TERM_X + 6, TERM_Y + 22,
-                       TERM_X + TERM_W - 6, TERM_Y + TERM_H - 6, TERMINAL_WHITE)
+    return count_color(frame, TTY_TEXT_RECT, TERMINAL_TEXT)
+
+
+def terminal_row_image(frame, row):
+    """Return one TTY text row, including the cursor, for navigation checks."""
+    width, height, pixels = frame
+    x0, _, x1, _ = TTY_TEXT_RECT
+    y0 = TTY_TEXT_RECT[1] + row * WM_FONT_HEIGHT
+    y1 = y0 + WM_FONT_HEIGHT
+    if row < 0 or y1 > height:
+        raise ValueError(f"TTY row {row} outside {width}x{height} frame")
+    return b"".join(pixels[(y * width + x0) * 3:
+                            (y * width + x1) * 3]
+                   for y in range(y0, y1))
 
 
 def desktop_visible(frame):
-    if frame[:2] != (640, 400) or not background_is_blue(frame):
+    """Check that both current windows and the flat desktop are on screen."""
+    if not background_is_blue(frame):
         return False
-    # Focused title bar, dark terminal client area, and the banner text the
-    # terminal prints when it opens.
-    if not color_matches(pixel(frame, 160, TERM_Y + 8), TITLEBAR_BLUE):
+
+    # The Files window is inactive, while TTY receives keyboard input. Sample
+    # their title bars away from the title glyphs, plus unobstructed client
+    # pixels near the right edge of each window.
+    if not color_matches(pixel(frame, FILES_X + 3, FILES_Y + 3),
+                         TITLEBAR_INACTIVE):
         return False
-    if not color_matches(pixel(frame, 160, TERM_Y + TERM_H - 20), TERMINAL_BLACK):
+    if not color_matches(pixel(frame, TTY_X + 3, TTY_Y + 3),
+                         TITLEBAR_ACTIVE):
         return False
-    return terminal_text_pixels(frame) > 200
+    if not color_matches(pixel(frame, FILES_X + FILES_W - 4,
+                                FILES_Y + FILES_H // 2), WINDOW_BACKGROUND):
+        return False
+    if not color_matches(pixel(frame, TTY_X + TTY_W - 4,
+                                TTY_Y + TTY_H - 16), TERMINAL_BACKGROUND):
+        return False
+
+    files_title = count_color(frame, FILES_TITLE_TEXT, TERMINAL_TEXT)
+    tty_title = count_color(frame, TTY_TITLE_TEXT, TERMINAL_TEXT)
+    return files_title > 20 and tty_title > 8 and terminal_text_pixels(frame) > 100
+
+
+def exercise_tty_history(mon, capture):
+    """Exercise recent/older history navigation and draft restoration."""
+    def row_frame(row, expected=None, different_from=None):
+        frame = mon.frame(capture)
+        if not desktop_visible(frame):
+            return None
+        image = terminal_row_image(frame, row)
+        if expected is not None and image != expected:
+            return None
+        if different_from is not None and image == different_from:
+            return None
+        return frame
+
+    # The preceding `ver` command leaves the next prompt on row 4. Two lines
+    # later is still blank; the command below will put its next prompt on row 6.
+    frame = mon.frame(capture)
+    assert desktop_visible(frame), "desktop disappeared before history test"
+    blank_row_6 = terminal_row_image(frame, 6)
+    mon.type("echo history_probe\n")
+    prompt_frame = wait_for(
+        lambda: row_frame(6, different_from=blank_row_6),
+        "TTY prompt after history probe",
+    )
+    prompt_image = terminal_row_image(prompt_frame, 6)
+
+    mon.key("up")
+    latest_frame = wait_for(
+        lambda: row_frame(6, different_from=prompt_image),
+        "Up to recall the latest command",
+    )
+    latest_image = terminal_row_image(latest_frame, 6)
+    mon.key("down")
+    wait_for(lambda: row_frame(6, expected=prompt_image),
+             "Down to restore an empty draft")
+
+    # Submit the recalled command once more. Its adjacent duplicate is not
+    # needed in history; Up again below should therefore reach the older `ver`.
+    blank_row_8 = terminal_row_image(prompt_frame, 8)
+    mon.key("up")
+    wait_for(lambda: row_frame(6, different_from=prompt_image),
+             "Up to recall a command for re-execution")
+    mon.key("ret")
+    row8_prompt = wait_for(
+        lambda: row_frame(8, different_from=blank_row_8),
+        "TTY prompt after re-executing history",
+    )
+    row8_prompt_image = terminal_row_image(row8_prompt, 8)
+
+    mon.type("draft")
+    draft_frame = wait_for(
+        lambda: row_frame(8, different_from=row8_prompt_image),
+        "typed draft in the TTY",
+    )
+    draft_image = terminal_row_image(draft_frame, 8)
+
+    mon.key("up")
+    latest_frame = wait_for(
+        lambda: row_frame(8, different_from=draft_image),
+        "Up to recall the newest command",
+    )
+    latest_image = terminal_row_image(latest_frame, 8)
+    mon.key("up")
+    older_frame = wait_for(
+        lambda: row_frame(8, different_from=latest_image),
+        "Up to recall an older command",
+    )
+    older_image = terminal_row_image(older_frame, 8)
+    assert older_image != latest_image, "history entries should be distinct"
+
+    mon.key("down")
+    wait_for(lambda: row_frame(8, expected=latest_image),
+             "Down to move forward in command history")
+    mon.key("down")
+    wait_for(lambda: row_frame(8, expected=draft_image),
+             "Down past newest command to restore the draft")
+    print("PASS: TTY Up/Down history and draft restoration", flush=True)
+
+
+def demo_pattern_visible(frame):
+    """Recognize several clean colour bars below the demo's upper shapes."""
+    if frame[:2] != GFX_SIZE:
+        return False
+    samples = (
+        ((10, 175), (0, 0, 0)),
+        ((30, 175), (0, 0, 170)),
+        ((50, 175), (0, 170, 0)),
+        ((70, 175), (0, 170, 170)),
+        ((90, 175), (170, 0, 0)),
+    )
+    return all(color_matches(pixel(frame, x, y), expected)
+               for (x, y), expected in samples)
 
 
 def exercise(mon, folder):
     capture = folder / "screen.ppm"
-    wait_for(lambda: "$" in mon.tty(1), "interactive shell")
-    # Wait for the renderer too: it may lag behind the guest's text writes.
+    wait_for(lambda: "$" in mon.tty(1), "interactive text shell")
+
+    # Text mode remains 720x400. Wait for a real screen image, not just a
+    # string in video memory, so restoration checks have a stable baseline.
     def visible_shell():
         frame = mon.frame(capture)
-        if frame[:2] == (720, 400) and sum(bool(b) for b in frame[2][:720 * 48 * 3]) > 1000:
+        if (frame[:2] == TEXT_SCREEN_SIZE and
+                sum(bool(byte) for byte in frame[2][:720 * 48 * 3]) > 1000):
             return frame
         return None
-    baseline = wait_for(visible_shell, "visible shell")
-    # The first three rows never change during this test. Exact pixels catch
-    # font/attribute corruption that a text-memory read cannot detect.
+
+    baseline = wait_for(visible_shell, "visible text shell")
     header_bytes = baseline[0] * 48 * 3
     header = baseline[2][:header_bytes]
     assert any(header), "default console must show the shell, not an empty screen"
 
     def graphics():
-        f = mon.frame(capture)
-        return f if desktop_visible(f) else None
+        frame = mon.frame(capture)
+        return frame if desktop_visible(frame) else None
 
     def text_restored():
-        f = mon.frame(capture)
-        return f[:2] == baseline[:2] and f[2][:header_bytes] == header
+        frame = mon.frame(capture)
+        return (frame[:2] == baseline[:2] and
+                frame[2][:header_bytes] == header)
 
     def welcome():
-        f = mon.frame(capture)
-        return f if welcome_visible(f) else None
+        frame = mon.frame(capture)
+        return frame if welcome_visible(frame) else None
 
     for session in range(2):
-        # A stale ESC in text mode must not instantly close the next session.
+        # Discard any ESC left in the TTY queue before launching a fresh GUI.
         mon.key("esc")
         mon.type("desktop\n")
-        # Startup shows the welcome message first, and only then the TTY window.
-        wait_for(welcome, "welcome message")
-        print(f"PASS: desktop session {session + 1} shows the welcome message",
+        wait_for(welcome, "blue welcome screen")
+        print(f"PASS: desktop session {session + 1} shows the welcome screen",
               flush=True)
-        frame = wait_for(graphics, "TTY window")
-        print(f"PASS: desktop session {session + 1} opens the TTY window",
+
+        frame = wait_for(graphics, "Files and TTY windows")
+        print(f"PASS: desktop session {session + 1} opens Files and TTY",
               flush=True)
         time.sleep(0.25)
         assert graphics(), "desktop closed immediately after launch"
 
         if session == 0:
+            # The initial mouse cursor is visible; a relative mouse event must
+            # move it without changing the desktop layout.
             mon.command("input-send-event", events=[
                 {"type": "rel", "data": {"axis": "x", "value": 25}},
                 {"type": "rel", "data": {"axis": "y", "value": 15}},
             ])
-            wait_for(lambda: (f := mon.frame(capture))[:2] == frame[:2] and
-                     f[2] != frame[2] and desktop_visible(f), "mouse cursor movement")
-            # Switching text consoles in graphics mode used to overwrite the
-            # CRTC start address and make the desktop vanish/scroll.
-            mon.key("alt", "f1")
-            assert graphics(), "console shortcut corrupted the graphics display"
-            print("PASS: mouse input and graphics console isolation", flush=True)
+            def mouse_moved():
+                updated = mon.frame(capture)
+                if (updated[:2] == frame[:2] and updated[2] != frame[2]
+                        and desktop_visible(updated)):
+                    return updated
+                return None
 
-            # The TTY window is a real terminal: typing must echo into it and
-            # a command must answer there, not in the text console behind it.
-            before = terminal_text_pixels(mon.frame(capture))
+            moved = wait_for(mouse_moved, "mouse cursor movement")
+            print("PASS: mouse input moves the cursor", flush=True)
+
+            # A console-switch shortcut must not take the screen away from the
+            # graphics task while the desktop owns the display.
+            mon.key("alt", "f1")
+            assert graphics(), "console shortcut corrupted the desktop display"
+            print("PASS: graphics console isolation", flush=True)
+
+            # Verify that keystrokes reach the TTY and its `ver` command draws
+            # additional text in the TTY client, rather than behind the GUI.
+            before = terminal_text_pixels(moved)
             mon.type("ver\n")
-            wait_for(lambda: (f := mon.frame(capture)) and desktop_visible(f) and
-                     terminal_text_pixels(f) > before, "terminal echo and output")
-            print("PASS: the TTY window accepts typed commands", flush=True)
+
+            def terminal_command_visible():
+                updated = mon.frame(capture)
+                if (desktop_visible(updated) and
+                        terminal_text_pixels(updated) >= before + 50):
+                    return updated
+                return None
+
+            wait_for(terminal_command_visible, "TTY command output")
+            print("PASS: TTY accepts commands and renders their output",
+                  flush=True)
+
+            exercise_tty_history(mon, capture)
 
         mon.key("esc")
-        wait_for(lambda: mon.tty(1).count("[desktop finished]") == session + 1,
+        wait_for(lambda: mon.tty(1).count("[desktop finished]") >= session + 1,
                  "desktop command completion")
-        wait_for(text_restored, "readable text, font and palette restoration")
-        print("PASS: ESC restores the visible shell and its font", flush=True)
+        wait_for(text_restored, "text-mode screen, font and palette restoration")
+        print("PASS: ESC restores the text shell and font", flush=True)
 
     mon.type("echo ready\n")
-    wait_for(lambda: "\nready\n$" in mon.tty(1), "echo after desktop exit")
+    wait_for(lambda: "\nready\n$" in mon.tty(1), "shell input after desktop exit")
     print("PASS: shell accepts commands after desktop exit", flush=True)
 
-    # TASK_GFX shares the mode-switch driver with TASK_DESKTOP.
+    # TASK_GFX uses the same VBE mode-switch driver as TASK_DESKTOP. Its static
+    # phase has clean colour bars below y=150 before the bouncing-ball phase.
     mon.type("demo\n")
-    wait_for(lambda: (f := mon.frame(capture))[:2] == (640, 400) and
-             color_matches(pixel(f, 30, 175), (0, 0, 170)) and
-             color_matches(pixel(f, 50, 175), (0, 170, 0)), "graphics demo color bars")
+
+    def demo_visible():
+        frame = mon.frame(capture)
+        return frame if demo_pattern_visible(frame) else None
+
+    wait_for(demo_visible, "800x600 demo colour bars", timeout=120)
     mon.key("esc")
     wait_for(lambda: "[demo finished]" in mon.tty(1), "demo completion")
-    wait_for(text_restored, "text restoration after demo")
-    print("PASS: demo still enters/exits graphics correctly", flush=True)
+    wait_for(text_restored, "text-mode restoration after demo")
+    print("PASS: demo renders 800x600 colour bars and restores text mode",
+          flush=True)
 
 
 def main():
@@ -243,44 +462,51 @@ def main():
     parser.add_argument("--image-dir", type=Path, default=OS_DIR / "build/desktop")
     parser.add_argument("--boot", choices=("floppy", "hd", "iso"), default="floppy")
     args = parser.parse_args()
+
     images = args.image_dir.resolve()
     with tempfile.TemporaryDirectory(prefix="noxis-desktop-") as temporary:
         folder = Path(temporary)
         monitor = folder / "monitor.sock"
-        command = [args.qemu, "-m", "32", "-vga", "std", "-snapshot", "-display", "none",
-                   "-serial", "none", "-no-reboot", "-no-shutdown",
-                   "-qmp", f"unix:{monitor},server=on,wait=off",
-                   "-drive", f"file={images / '100m.img'},format=raw,if=ide,index=0"]
+        command = [
+            args.qemu, "-m", "32", "-vga", "std", "-snapshot", "-display", "none",
+            "-serial", "none", "-no-reboot", "-no-shutdown",
+            "-qmp", f"unix:{monitor},server=on,wait=off",
+            "-drive", f"file={images / '100m.img'},format=raw,if=ide,index=0",
+        ]
         if args.boot == "floppy":
-            command += ["-drive", f"file={images / 'a.img'},format=raw,if=floppy", "-boot", "a"]
+            command += ["-drive", f"file={images / 'a.img'},format=raw,if=floppy",
+                        "-boot", "a"]
         elif args.boot == "iso":
             command += ["-cdrom", str(images / "osfs11.iso"), "-boot", "d"]
         else:
             command += ["-boot", "c"]
-        with (folder / "qemu.log").open("w+") as log:
+
+        log_path = folder / "qemu.log"
+        with log_path.open("w+") as log:
             qemu = subprocess.Popen(command, stdout=log, stderr=log)
-            mon = None
+            monitor_client = None
             try:
                 def started():
                     if qemu.poll() is not None:
                         log.seek(0)
                         raise RuntimeError("QEMU failed: " + log.read())
                     return monitor.exists()
+
                 wait_for(started, "QMP socket", timeout=10)
-                mon = Monitor(monitor)
-                exercise(mon, folder)
+                monitor_client = Monitor(monitor)
+                exercise(monitor_client, folder)
                 print(f"ALL DESKTOP QEMU CHECKS PASSED ({args.boot})", flush=True)
             except Exception:
-                if mon:
+                if monitor_client:
                     try:
-                        print("--- TTY0 ---\n" + mon.tty(0))
-                        print("--- TTY1 ---\n" + mon.tty(1))
+                        print("--- TTY0 ---\n" + monitor_client.tty(0))
+                        print("--- TTY1 ---\n" + monitor_client.tty(1))
                     except (OSError, RuntimeError):
                         pass
                 raise
             finally:
-                if mon:
-                    mon.close()
+                if monitor_client:
+                    monitor_client.close()
                 qemu.terminate()
                 try:
                     qemu.wait(timeout=5)

@@ -17,6 +17,7 @@ Files usually found in /:
 
 Desktop tips:
   * Files window: Up/Down to pick, Enter to view, Enter or q to go back.
-  * TTY window:   help, clear, echo, ver, uptime, ls, cat <file>, end.
+  * TTY window:   Up/Down recalls the last 8 commands; Down restores a draft.
+  * TTY commands: help, clear, echo, ver, uptime, ls, cat <file>, end.
   * end (or poweroff) really turns the machine off.
   * ESC closes the desktop and returns to the text shell.

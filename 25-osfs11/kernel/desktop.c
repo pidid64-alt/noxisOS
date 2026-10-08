@@ -11,9 +11,9 @@
  * then two windows open side by side -- the "Files" explorer (root
  * directory listing with a read-only text viewer) and the TTY terminal.
  * Everything typed while the desktop owns the screen goes to the focused
- * window: text is line-edited in the TTY window (see term_exec() for the
- * commands it understands), while arrows/Enter steer the file explorer.
- * ESC closes the desktop (or steps out of a file view first).
+ * window: text and Up/Down history editing go to the TTY, while arrows/Enter
+ * steer the file explorer when it has focus. ESC closes the desktop (or steps
+ * out of a file view first).
  *
  * @author noxisOS
  * @date   2026-08-28
@@ -45,6 +45,16 @@ PRIVATE DESKTOP desktop;
 
 PRIVATE char term_input[TERM_INPUT_MAX + 1];
 PRIVATE int  term_input_len;
+
+/* Small per-desktop-session command history. `term_history_next' is the next
+ * ring slot to write; `term_history_browse' counts backwards from newest
+ * (zero means the user is editing the current prompt). */
+#define TERM_HISTORY_SIZE 8
+PRIVATE char term_history_lines[TERM_HISTORY_SIZE][TERM_INPUT_MAX + 1];
+PRIVATE char term_history_draft[TERM_INPUT_MAX + 1];
+PRIVATE int  term_history_count;
+PRIVATE int  term_history_next;
+PRIVATE int  term_history_browse;
 
 /* How long the welcome screen stays up before the windows open
  * (ticks, HZ per second). Any key skips the rest of the wait. */
@@ -162,9 +172,8 @@ PRIVATE int desktop_run(void)
 		                my - desktop.mouse_y,
 		                buttons);
 
-		/* Every key goes to the focused window: navigation keys and
-		 * Enter steer the Files window, everything else is text for
-		 * the terminal. */
+		/* Every key goes to the focused window: arrows/Enter steer
+		 * Files, while Up/Down edit history when TTY is focused. */
 		while ((ch = tty_gui_getchar()) >= 0) {
 			if (desktop.expl.win_id >= 0 &&
 			    desktop.active_window == desktop.expl.win_id)
@@ -222,14 +231,141 @@ PRIVATE void desktop_welcome(void)
 }
 
 /*****************************************************************************
+ *                                term_history_copy
+ *****************************************************************************
+ * Copy one bounded terminal command into an input/history buffer.
+ *****************************************************************************/
+PRIVATE void term_history_copy(char *dest, const char *src)
+{
+	int i;
+
+	for (i = 0; i < TERM_INPUT_MAX && src[i]; i++)
+		dest[i] = src[i];
+	dest[i] = 0;
+}
+
+/*****************************************************************************
+ *                                term_history_reset
+ *****************************************************************************
+ * Start each desktop session with an empty history ring.
+ *****************************************************************************/
+PRIVATE void term_history_reset(void)
+{
+	int i;
+
+	term_history_count = 0;
+	term_history_next = 0;
+	term_history_browse = 0;
+	term_history_draft[0] = 0;
+	for (i = 0; i < TERM_HISTORY_SIZE; i++)
+		term_history_lines[i][0] = 0;
+}
+
+/*****************************************************************************
+ *                                term_history_store
+ *****************************************************************************
+ * Save a non-empty command, avoiding adjacent duplicates.
+ *****************************************************************************/
+PRIVATE void term_history_store(const char *line)
+{
+	int i = 0;
+	int last;
+
+	while (line[i] == ' ' || line[i] == '\t')
+		i++;
+	if (line[i] == 0)
+		return;
+
+	if (term_history_count > 0) {
+		last = (term_history_next + TERM_HISTORY_SIZE - 1) % TERM_HISTORY_SIZE;
+		if (strcmp(term_history_lines[last], line) == 0)
+			return;
+	}
+
+	term_history_copy(term_history_lines[term_history_next], line);
+	term_history_next = (term_history_next + 1) % TERM_HISTORY_SIZE;
+	if (term_history_count < TERM_HISTORY_SIZE)
+		term_history_count++;
+}
+
+/*****************************************************************************
+ *                                term_history_get
+ *****************************************************************************
+ * Return the history entry `offset' commands back from the newest entry.
+ *****************************************************************************/
+PRIVATE const char *term_history_get(int offset)
+{
+	int slot = (term_history_next + TERM_HISTORY_SIZE - offset)
+	           % TERM_HISTORY_SIZE;
+	return term_history_lines[slot];
+}
+
+/*****************************************************************************
+ *                                term_history_replace_input
+ *****************************************************************************
+ * Replace the visible input without touching the prompt or earlier output.
+ *****************************************************************************/
+PRIVATE void term_history_replace_input(const char *line)
+{
+	int i;
+
+	while (term_input_len > 0) {
+		term_input_len--;
+		term_input[term_input_len] = 0;
+		wm_term_backspace(&desktop);
+	}
+
+	for (i = 0; line[i] && term_input_len < TERM_INPUT_MAX; i++) {
+		term_input[term_input_len++] = line[i];
+		wm_term_putc(&desktop, line[i]);
+	}
+	term_input[term_input_len] = 0;
+}
+
+/*****************************************************************************
+ *                                term_history_up
+ *****************************************************************************
+ * Recall an older command, preserving the current prompt as a draft.
+ *****************************************************************************/
+PRIVATE void term_history_up(void)
+{
+	if (term_history_count == 0 ||
+	    term_history_browse >= term_history_count)
+		return;
+
+	if (term_history_browse == 0)
+		term_history_copy(term_history_draft, term_input);
+	term_history_browse++;
+	term_history_replace_input(term_history_get(term_history_browse));
+}
+
+/*****************************************************************************
+ *                                term_history_down
+ *****************************************************************************
+ * Move toward newer commands, restoring the draft after the newest entry.
+ *****************************************************************************/
+PRIVATE void term_history_down(void)
+{
+	if (term_history_browse == 0)
+		return;
+
+	term_history_browse--;
+	if (term_history_browse == 0)
+		term_history_replace_input(term_history_draft);
+	else
+		term_history_replace_input(term_history_get(term_history_browse));
+}
+
+/*****************************************************************************
  *                                term_start
  *****************************************************************************
  * Print the banner and the first prompt into the terminal window.
  *****************************************************************************/
 PRIVATE void term_start(void)
 {
+	term_history_reset();
 	wm_term_puts(&desktop, "noxisOS terminal\n");
-	wm_term_puts(&desktop, "help: commands  ls: files  esc: close\n");
+	wm_term_puts(&desktop, "help: commands  Up/Down: history\n");
 	term_prompt();
 }
 
@@ -240,6 +376,8 @@ PRIVATE void term_prompt(void)
 {
 	term_input_len = 0;
 	term_input[0] = 0;
+	term_history_browse = 0;
+	term_history_draft[0] = 0;
 	wm_term_puts(&desktop, TERM_PROMPT);
 }
 
@@ -253,9 +391,19 @@ PRIVATE void term_key(char ch)
 	if (desktop.term.win_id < 0)
 		return;
 
+	if (ch == GUI_KEY_UP) {
+		term_history_up();
+		return;
+	}
+	if (ch == GUI_KEY_DOWN) {
+		term_history_down();
+		return;
+	}
+
 	if (ch == '\n') {
-		wm_term_putc(&desktop, '\n');
 		term_input[term_input_len] = 0;
+		term_history_store(term_input);
+		wm_term_putc(&desktop, '\n');
 		term_exec(term_input);
 		if (desktop.running)
 			term_prompt();
@@ -264,6 +412,7 @@ PRIVATE void term_key(char ch)
 
 	if (ch == '\b') {
 		if (term_input_len > 0) {
+			term_history_browse = 0;
 			term_input_len--;
 			term_input[term_input_len] = 0;
 			wm_term_backspace(&desktop);
@@ -277,7 +426,9 @@ PRIVATE void term_key(char ch)
 	if (term_input_len >= TERM_INPUT_MAX)	/* line full: ignore */
 		return;
 
+	term_history_browse = 0;
 	term_input[term_input_len++] = ch;
+	term_input[term_input_len] = 0;
 	wm_term_putc(&desktop, ch);
 }
 
@@ -436,6 +587,8 @@ PRIVATE void term_exec(char *line)
 		             "cat <file>    show a file\n");
 		wm_term_puts(&desktop,
 		             "end | poweroff  shut down\n");
+		wm_term_puts(&desktop,
+		             "Up/Down       command history (last 8)\n");
 	}
 	else if (strcmp(cmd, "clear") == 0 || strcmp(cmd, "cls") == 0) {
 		wm_term_clear(&desktop);
