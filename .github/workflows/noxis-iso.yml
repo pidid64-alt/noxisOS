@@ -172,8 +172,11 @@ jobs:
             exit "$rc"
           fi
 
-          tail -n 25 "$log"
+          tail -n 20 "$log"
           ls -lh noxis-linux/out/
+
+          iso=$(ls -1 noxis-linux/out/*.iso | head -n1)
+          printf '::notice title=ISO built::%s (%s)\n' "$(basename "$iso")" "$(du -h "$iso" | cut -f1)"
 
       - name: Checksums and split (max 2 GiB per file)
         run: |
@@ -194,13 +197,47 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-      - name: Attach the ISO to the release (tag builds only)
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+  # -------------------------------------------------------------------------
+  # Publishing runs on the *host* runner (not the Arch container) because it
+  # only needs gh, which is preinstalled there.
+  # -------------------------------------------------------------------------
+  release:
+    name: Publish the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the ISO parts
+        uses: actions/download-artifact@v4
+        with:
+          name: noxis-iso-${{ github.run_number }}
+          path: parts
+
+      - name: List what we got
+        run: ls -lh parts/
+
+      - name: Create or update the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
         run: |
-          pacman -S --noconfirm --needed github-cli
+          set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "NoxisOS $tag" --notes "NoxisOS Cachy Edition ISO (split into parts — join with: cat noxis-*.part* > noxis.iso)"
-          gh release upload "$tag" noxis-linux/out/parts/* noxis-linux/out/*.sha256 --clobber
+          notes=$(cat <<'EOF'
+          NoxisOS Cachy Edition — live/install ISO built on CachyOS/Arch with a Hyprland desktop.
+
+          The image is split into <2 GiB parts (GitHub rejects larger single files). Reassemble and verify:
+
+          ```bash
+          cat noxis-*.iso.part* > noxis.iso
+          sha256sum -c noxis-*.iso.sha256
+          sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync
+          ```
+
+          Boots on BIOS (syslinux) and UEFI (systemd-boot): default kernel `linux-cachyos`, an LTS fallback and a `nomodeset` safe-graphics entry.
+          EOF
+          )
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "NoxisOS $tag" --notes "$notes"
+          gh release upload "$tag" parts/* --clobber
+          gh release view "$tag" --json assets --jq '.assets[] | "asset: \(.name) \(.size)"'
