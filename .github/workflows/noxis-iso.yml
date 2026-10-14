@@ -139,7 +139,28 @@ jobs:
           if [ "$tier" != "base" ]; then
             ./noxis-linux/scripts/switch-repo-tier.sh "$tier"
           fi
-          ./noxis-linux/build.sh --clean
+
+          # The package list was already validated by the `verify` job.
+          # Capture the build output so a failure can be surfaced as annotations
+          # (annotations are readable through the API, artifact logs are not).
+          log=/tmp/noxis-build.log
+          set +e
+          ./noxis-linux/build.sh --clean --no-verify >"$log" 2>&1
+          rc=$?
+          set -e
+
+          echo "=== progress markers ==="
+          grep -E '^==>' "$log" | tail -25 || true
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=build.sh exited with $rc::log tail follows in the next annotations"
+            tail -n 45 "$log" | sed 's/\r$//; s/%/%25/g' | while IFS= read -r line; do
+              printf '::error::%s\n' "$line"
+            done
+            exit "$rc"
+          fi
+
+          tail -n 25 "$log"
           ls -lh noxis-linux/out/
 
       - name: Checksums and split (max 2 GiB per file)
