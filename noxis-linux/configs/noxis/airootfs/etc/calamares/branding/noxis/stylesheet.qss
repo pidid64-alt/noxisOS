@@ -1,0 +1,63 @@
+/* NoxisOS Cachy Edition — Calamares styling (violet on near-black) */
+
+QWidget {
+    color: #e5e7eb;
+}
+
+QPushButton {
+    background: #8b5cf6;
+    color: #0b0b12;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 18px;
+    font-weight: 600;
+}
+
+QPushButton:hover  { background: #a78bfa; }
+QPushButton:disabled { background: #3f3f46; color: #a1a1aa; }
+
+QPushButton#quitButton {
+    background: #27272a;
+    color: #e5e7eb;
+}
+
+QPushButton#quitButton:hover { background: #3f3f46; }
+
+QProgressBar {
+    border: 1px solid #8b5cf6;
+    border-radius: 8px;
+    background: #14141f;
+    text-align: center;
+    color: #e5e7eb;
+}
+
+QProgressBar::chunk {
+    background: #8b5cf6;
+    border-radius: 7px;
+}
+
+QListView, QTreeView, QTableView {
+    background: #14141f;
+    alternate-background-color: #1b1b25;
+    border: 1px solid #2f2f3a;
+    border-radius: 6px;
+}
+
+QListView::item:selected, QTreeView::item:selected {
+    background: #8b5cf6;
+    color: #0b0b12;
+}
+
+QLineEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+    background: #14141f;
+    border: 1px solid #3f3f46;
+    border-radius: 6px;
+    padding: 5px 8px;
+}
+
+QLineEdit:focus, QTextEdit:focus, QComboBox:focus {
+    border-color: #8b5cf6;
+}
+
+QTabWidget::pane { border: 1px solid #2f2f3a; border-radius: 6px; }
+QTabBar::tab:selected { background: #8b5cf6; color: #0b0b12; border-radius: 6px; }

@@ -1,0 +1,8 @@
+// Live medium only: wheel may do anything without a password so that the
+// installer, gparted, NetworkManager etc. work out of the box.
+// The installer deletes this file from the installed system.
+polkit.addRule(function(action, subject) {
+    if (subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

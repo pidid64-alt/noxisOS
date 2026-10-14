@@ -1,0 +1,172 @@
+name: NoxisOS ISO
+
+# ---------------------------------------------------------------------------
+# Builds the NoxisOS Cachy Edition ISO inside an Arch Linux container.
+#
+#  * every push that touches the distro runs the fast package pre-flight
+#  * `workflow_dispatch` (or a v* tag) runs the full ISO build and uploads
+#    the image as artifact(s) — split into ~1.9 GiB parts, because single
+#    files above 2 GiB cannot be uploaded
+# ---------------------------------------------------------------------------
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+    paths:
+      - 'noxis-linux/**'
+      - '.github/workflows/noxis-iso.yml'
+  pull_request:
+    paths:
+      - 'noxis-linux/**'
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'CachyOS repository tier for the base packages'
+        type: choice
+        default: base
+        options: [base, v3, v4, znver4]
+      build_iso:
+        description: 'Also build the ISO (takes ~30-45 min)'
+        type: boolean
+        default: true
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  PROFILE: noxis-linux/configs/noxis
+  CACHYOS_KEY: F3B607488DB35A47
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Fast sanity check: does every package in packages.x86_64 exist?
+  # -------------------------------------------------------------------------
+  verify:
+    name: Verify package list
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install prerequisites
+        run: |
+          pacman -Sy --noconfirm --needed archlinux-keyring pacman-contrib awk
+
+      - name: Trust the CachyOS repositories
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          for i in 1 2 3; do
+            pacman-key --recv-keys "$CACHYOS_KEY" --keyserver keyserver.ubuntu.com && break
+            sleep 10
+          done
+          pacman-key --lsign-key "$CACHYOS_KEY"
+
+      - name: Check that every package resolves
+        run: ./noxis-linux/scripts/check-packages.sh "$PROFILE"
+
+      - name: Shell syntax check
+        run: |
+          for f in noxis-linux/build.sh noxis-linux/scripts/*.sh \
+                   "$PROFILE"/airootfs/usr/local/bin/* \
+                   "$PROFILE"/airootfs/etc/calamares/scripts/*; do
+            [ -f "$f" ] && bash -n "$f"
+          done
+          echo "all scripts parse"
+
+      - name: YAML sanity check
+        run: |
+          pacman -S --noconfirm --needed python-yaml file >/dev/null
+          find "$PROFILE" -name '*.conf' -o -name '*.desc' | while read -r f; do
+            python3 -c "
+          import sys, yaml
+          try:
+              list(yaml.safe_load_all(open(sys.argv[1])))
+          except Exception as exc:
+              print(f'{sys.argv[1]}: {exc}'); sys.exit(1)
+          " "$f"
+          done
+          echo "all calamares configs parse"
+
+  # -------------------------------------------------------------------------
+  # The real thing: build the ISO.
+  # -------------------------------------------------------------------------
+  build:
+    name: Build ISO (${{ github.event.inputs.tier || 'base' }})
+    needs: verify
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.build_iso == 'true') || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show disk space
+        run: df -h /
+
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            archiso git sudo squashfs-tools dosfstools mtools libisoburn \
+            syslinux grub edk2-shell zstd which python
+
+      - name: Trust the CachyOS repositories
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          for i in 1 2 3; do
+            pacman-key --recv-keys "$CACHYOS_KEY" --keyserver keyserver.ubuntu.com && break
+            sleep 10
+          done
+          pacman-key --lsign-key "$CACHYOS_KEY"
+
+      - name: Build the ISO
+        env:
+          NOXIS_ALLOW_ROOT: '1'
+        run: |
+          tier="${{ github.event.inputs.tier }}"
+          tier="${tier:-base}"
+          echo "repository tier: $tier"
+          if [ "$tier" != "base" ]; then
+            ./noxis-linux/scripts/switch-repo-tier.sh "$tier"
+          fi
+          ./noxis-linux/build.sh --clean
+          ls -lh noxis-linux/out/
+
+      - name: Checksums and split (max 2 GiB per file)
+        run: |
+          set -euo pipefail
+          cd noxis-linux/out
+          iso=$(ls -1 *.iso | head -n1)
+          sha256sum "$iso" | tee "$iso.sha256"
+          mkdir -p parts && cd parts
+          split --bytes=1900M --numeric-suffixes=1 --suffix-length=2 "../$iso" "${iso}.part"
+          ls -lh .
+          sha256sum ./* > SHA256SUMS
+
+      - name: Upload the ISO (split parts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: noxis-iso-${{ github.run_number }}
+          path: noxis-linux/out/parts/*
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Attach the ISO to the release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+        run: |
+          pacman -S --noconfirm --needed github-cli
+          tag="${GITHUB_REF_NAME}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "NoxisOS $tag" --notes "NoxisOS Cachy Edition ISO (split into parts — join with: cat noxis-*.part* > noxis.iso)"
+          gh release upload "$tag" noxis-linux/out/parts/* noxis-linux/out/*.sha256 --clobber

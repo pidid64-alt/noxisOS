@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# ===========================================================================
+#  noxis-prepare — runs inside the freshly unpacked target (chroot)
+# ===========================================================================
+# The target started life as the NoxisOS *live* image, so everything that only
+# makes sense on a live medium has to go before initramfs/bootloader jobs run.
+# ===========================================================================
+set -uo pipefail
+log() { printf '[noxis-prepare] %s\n' "$*"; }
+
+log "removing live-medium systemd units"
+rm -f  /etc/systemd/system/getty@tty1.service.d/autologin.conf
+rmdir  /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+rm -f  /etc/systemd/system/multi-user.target.wants/noxis-live-setup.service
+rm -f  /etc/systemd/system/multi-user.target.wants/pacman-init.service
+rm -f  /etc/systemd/system/pacman-init.service
+rm -f  /etc/systemd/system/etc-pacman.d-gnupg.mount
+rm -f  /usr/lib/systemd/system/noxis-live-setup.service
+rm -f  /usr/lib/sysusers.d/noxis-live.conf
+rm -f  /usr/lib/tmpfiles.d/noxis-live.conf
+
+log "removing live-only helpers"
+rm -f  /usr/local/bin/noxis-live-setup
+rm -f  /usr/local/bin/noxis-run-as-root
+rm -f  /usr/local/bin/noxis-install
+rm -f  /usr/share/applications/noxis-install.desktop
+
+log "dropping passwordless live grants"
+rm -f  /etc/sudoers.d/10-liveuser
+rm -f  /etc/polkit-1/rules.d/49-nopasswd_global.rules
+
+log "removing archiso initramfs hooks (the real ones come from mkinitcpio)"
+rm -f  /etc/mkinitcpio.conf.d/archiso.conf
+
+log "restoring persistent journal storage"
+rm -f  /etc/journald.conf.d/volatile-storage.conf
+rmdir  /etc/journald.conf.d 2>/dev/null || true
+
+log "cleaning live-user leftovers"
+rm -rf /home/liveuser
+rm -rf /.Trash-1000
+rm -f  /etc/skel/.bash_profile      # no auto-start: SDDM logs the session in
+
+log "writing the installed-system welcome files"
+cat > /etc/issue <<'ISSUE'
+
+  NoxisOS Cachy Edition \r \n \l
+
+ISSUE
+
+cat > /etc/motd <<'MOTD'
+  NoxisOS Cachy Edition — run `noxis-welcome` for a quick tour.
+MOTD
+
+date --utc +'installed from the NoxisOS live medium on %Y-%m-%d %H:%M UTC' > /etc/noxis-installed
+
+log "prepare done"

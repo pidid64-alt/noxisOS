@@ -1,0 +1,36 @@
+/* noxis-linux — wofi theme */
+* {
+    font-family: "JetBrainsMono Nerd Font", "Noto Sans", sans-serif;
+    font-size: 14px;
+}
+
+window {
+    background-color: rgba(14, 14, 24, 0.92);
+    border: 1px solid rgba(139, 92, 246, 0.45);
+    border-radius: 16px;
+}
+
+#input {
+    margin: 10px;
+    padding: 10px 14px;
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    border-radius: 12px;
+    background-color: rgba(30, 30, 46, 0.85);
+    color: #e5e7eb;
+}
+
+#input:focus { border-color: #8b5cf6; }
+
+#inner-box { margin: 4px 10px 10px 10px; background: transparent; }
+#outer-box { margin: 4px; background: transparent; }
+#scroll { margin: 0; border: none; }
+
+#text { margin: 4px; color: #d4d4d8; }
+#text:selected { color: #ffffff; }
+
+#entry { padding: 6px 8px; border-radius: 10px; }
+#entry:selected {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.85) 0%, rgba(34, 211, 238, 0.75) 100%);
+}
+
+#img { margin-right: 8px; }
