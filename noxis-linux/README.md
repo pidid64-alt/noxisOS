@@ -24,8 +24,11 @@ disk with Calamares — **without any network connection**.
   стол (Hyprland), свой установщик и брендинг.
 * Сборка — одной командой на Arch/CachyOS-хосте: `./build.sh` (или `make iso`).
   В облаке — через GitHub Actions: **Actions → NoxisOS ISO → Run workflow**.
-* Готовый ISO (~3 ГБ) загружается артефактом, разбитым на части по ~1.9 ГБ
-  (ограничение GitHub — 2 ГБ на файл). Склейка: `cat noxis-*.part* > noxis.iso`.
+* Готовый ISO (~3.4 ГБ) лежит на странице
+  [Releases](https://github.com/pidid64-alt/noxisOS/releases) — плюс он же
+  доступен артефактом сборки. Образ разбит на части по ~1.9 ГБ (ограничение
+  GitHub — 2 ГБ на файл). Склейка и проверка: `cat noxis-*.iso.part* > noxis.iso`,
+  затем `sha256sum -c SHA256SUMS` и `sha256sum noxis.iso`.
 * Запись на флешку: `sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync`.
 * В live-сессии: `Super+Return` — терминал, `Super+D` — меню, `noxis-install` —
   установщик, `noxis-welcome` — подсказки.
@@ -69,14 +72,30 @@ unprivileged); CI containers may set `NOXIS_ALLOW_ROOT=1`.
 
 ### Build in GitHub Actions
 
-1. Push this directory (or open a PR touching it) — the cheap **Verify** job runs.
-2. **Actions → NoxisOS ISO → Run workflow**, optionally choosing a repository
-   tier — the **Build** job produces the ISO in ~30–45 minutes.
-3. Download the artifact, then join and check it:
+Push a `v*` tag (or open a PR / push to a branch — then the cheap **Verify**
+job alone runs) and the workflow does the rest:
+
+| Job | What it does |
+|-----|--------------|
+| **Verify package list** | resolves every package against the CachyOS+Arch mirrors, runs `scripts/self-check.py` and shellcheck |
+| **Build ISO (base)** | `build.sh --clean --no-verify` in an official Arch container, splits the image into <2 GiB parts |
+| **Publish the release** | attaches the parts, `SHA256SUMS` and `noxis-*.iso.sha256` to the release for that tag |
 
 ```bash
-cat noxis-*.part* > noxis.iso
-sha256sum -c noxis-*.iso.sha256
+git tag -a v2026.11-alpha -m "NoxisOS Cachy Edition 2026.11 alpha" && git push origin v2026.11-alpha
+```
+
+`workflow_dispatch` (Actions → *NoxisOS ISO* → **Run workflow**, optionally
+picking a repository tier) is enabled as well and produces the same artifact in
+~20–25 minutes without touching a release.
+
+Download the parts (from the release page or the run's artifacts), then join,
+verify and write the image:
+
+```bash
+cat noxis-*.iso.part* > noxis.iso
+sha256sum -c SHA256SUMS      # the parts, as downloaded
+sha256sum noxis.iso          # must equal the hash inside noxis-*.iso.sha256
 sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
