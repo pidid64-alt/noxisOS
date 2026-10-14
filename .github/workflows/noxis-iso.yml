@@ -56,7 +56,7 @@ jobs:
 
       - name: Install prerequisites
         run: |
-          pacman -Sy --noconfirm --needed archlinux-keyring pacman-contrib awk
+          pacman -Sy --noconfirm --needed archlinux-keyring pacman-contrib python-yaml shellcheck
 
       - name: Trust the CachyOS repositories
         run: |
@@ -71,6 +71,9 @@ jobs:
       - name: Check that every package resolves
         run: ./noxis-linux/scripts/check-packages.sh "$PROFILE"
 
+      - name: Profile self-check (paths, configs, cross-references)
+        run: python3 noxis-linux/scripts/self-check.py "$PROFILE"
+
       - name: Shell syntax check
         run: |
           for f in noxis-linux/build.sh noxis-linux/scripts/*.sh \
@@ -80,19 +83,15 @@ jobs:
           done
           echo "all scripts parse"
 
-      - name: YAML sanity check
+      - name: Shellcheck (errors gate the build, warnings are reported)
         run: |
-          pacman -S --noconfirm --needed python-yaml file >/dev/null
-          find "$PROFILE" -name '*.conf' -o -name '*.desc' | while read -r f; do
-            python3 -c "
-          import sys, yaml
-          try:
-              list(yaml.safe_load_all(open(sys.argv[1])))
-          except Exception as exc:
-              print(f'{sys.argv[1]}: {exc}'); sys.exit(1)
-          " "$f"
-          done
-          echo "all calamares configs parse"
+          set +e
+          shellcheck -S error -f gcc -x noxis-linux/build.sh noxis-linux/scripts/*.sh \
+            "$PROFILE"/airootfs/usr/local/bin/* "$PROFILE"/airootfs/etc/calamares/scripts/*
+          rc=$?
+          shellcheck -S warning -f gcc -x noxis-linux/build.sh noxis-linux/scripts/*.sh \
+            "$PROFILE"/airootfs/usr/local/bin/* "$PROFILE"/airootfs/etc/calamares/scripts/* || true
+          exit $rc
 
   # -------------------------------------------------------------------------
   # The real thing: build the ISO.
@@ -116,7 +115,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed \
             archiso git sudo squashfs-tools dosfstools mtools libisoburn \
-            syslinux grub edk2-shell zstd which python
+            syslinux grub edk2-shell zstd which python python-yaml
 
       - name: Trust the CachyOS repositories
         run: |

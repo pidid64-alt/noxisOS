@@ -80,6 +80,13 @@ fi
 (( clean )) && { echo "==> removing ${work_dir}"; rm -rf -- "$work_dir"; }
 
 if (( verify )); then
+    echo "==> running the profile self-check"
+    if command -v python3 >/dev/null && python3 -c 'import yaml' 2>/dev/null; then
+        python3 "${script_dir}/scripts/self-check.py" "$profile"
+    else
+        echo "    (skipped: python3 with PyYAML is not installed — pacman -S python-yaml)"
+    fi
+
     echo "==> verifying the package list"
     "${script_dir}/scripts/check-packages.sh" "$profile"
 fi
