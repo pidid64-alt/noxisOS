@@ -17,6 +17,16 @@ The script prints the exact names; either drop them from
 Common ones that have moved: `waybar-hyprland` → `waybar`,
 `swaylock-effects-git` (AUR only on some setups), `nwg-look` (extra).
 
+## `error: failed to commit transaction (conflicting files)` / `exists in filesystem`
+
+A file in `airootfs/` has the same path as a file owned by a package, and
+archiso copies the profile *before* installing packages. Either rename the
+override (the Calamares configs here are `noxis-<module>.conf` bound through
+`instances:` for exactly this reason) or let the package own the file and patch
+it in one of the `nosix`/shell hooks instead. `/etc/pacman.conf`,
+`/etc/skel/*`, `/etc/locale.conf` and friends are fine: they are `backup=()`
+files, which pacman keeps as they are.
+
 ## mkarchiso warnings are fine, errors are not
 
 * `'edk2-shell' is not in the package list` → it *is* in `packages.x86_64`; if it

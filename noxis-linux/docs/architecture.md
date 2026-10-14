@@ -64,7 +64,16 @@ differences are deliberate and are listed below.
 
 ## 3. The install itself
 
-Calamares runs the `noxis` branding and this sequence (see `etc/calamares/settings.conf`):
+Calamares runs the `noxis` branding and this sequence (see `etc/calamares/settings.conf`).
+
+> **Why every config is called `noxis-<module>.conf`:** archiso copies `airootfs/`
+> into the build root *before* it installs packages, and the `cachyos-calamares`
+> package owns the stock `/etc/calamares/modules/<module>.conf` files. Shipping a
+> file with the same name aborts the build with `exists in filesystem`. The
+> overrides are therefore bound to their modules through `instances:` in
+> `settings.conf` (exactly what CachyOS does with `welcome_online.conf`).
+> `/etc/calamares/settings.conf` and `branding/noxis/` are *not* owned by any
+> package, so they keep their canonical paths.
 
 | Phase | Modules | Notes |
 |-------|---------|-------|

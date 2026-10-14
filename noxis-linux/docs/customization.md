@@ -81,14 +81,23 @@ Everything Calamares does is in `airootfs/etc/calamares/`:
 
 | File | Interesting knobs |
 |------|-------------------|
-| `settings.conf` | the module sequence, the `prepare`/`finalize` instances |
-| `modules/partition.conf` | filesystem list, EFI size, default filesystem, swap choice |
-| `modules/users.conf` | default groups, password rules, hostname template, forbidden names |
-| `modules/mount.conf` | btrfs subvolumes, mount options per filesystem |
-| `modules/bootloader.conf` | systemd-boot vs GRUB, kernel lines, menu timeout |
-| `modules/services-systemd.conf` | which units are enabled in the target |
-| `modules/welcome.conf` | RAM/disk requirements, which checks block the install |
+| `settings.conf` | the module sequence and the `instances:` table |
+| `modules/noxis-partition.conf` | filesystem list, EFI size, default filesystem, swap choice |
+| `modules/noxis-users.conf` | default groups, password rules, hostname template, forbidden names |
+| `modules/noxis-mount.conf` | btrfs subvolumes, mount options per filesystem |
+| `modules/noxis-bootloader.conf` | systemd-boot vs GRUB, kernel lines, menu timeout |
+| `modules/noxis-services-systemd.conf` | which units are enabled in the target |
+| `modules/noxis-welcome.conf` | RAM/disk requirements, which checks block the install |
 | `scripts/noxis-prepare`, `scripts/noxis-finalize` | the two shell hooks that clean up and finish the target |
+
+Overrides are named `noxis-<module>.conf` on purpose: the `cachyos-calamares`
+package owns `/etc/calamares/modules/<module>.conf`, and airootfs files are
+copied before packages are installed, so identical names fail the build with
+`exists in filesystem`. Each override is bound to its module by an entry in the
+`instances:` block of `settings.conf` (see the note in
+[architecture.md](architecture.md)). Adding a new one: drop
+`modules/noxis-<name>.conf`, add the instance and reference `module@<id>` in the
+sequence.
 
 The shell hooks are ordinary bash — the fastest way to add post-install steps
 (extra users, firewall defaults, licence files) is to append them to

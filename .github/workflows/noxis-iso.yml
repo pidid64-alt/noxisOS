@@ -161,10 +161,11 @@ jobs:
             # into a single multi-line one (%0A is the escape for a newline).
             report="$(
               {
-                echo "--- disk ---"; df -h / | tail -2
-                echo "--- markers ---"
-                grep -E '^==>|^\[mkarchiso\]|ERROR|error:|warning:' "$log" | tail -16
-                echo "--- tail ---"; tail -n 14 "$log"
+                echo "--- disk ---"; df -h / | tail -1
+                echo "--- failures ---"
+                grep -iE 'exists in filesystem|conflicting files|^error|failed|cannot|no space|invalid|not found' "$log" \
+                  | cut -c1-170 | tail -18
+                echo "--- tail ---"; tail -n 6 "$log" | cut -c1-170
               } | sed 's/\r$//; s/%/%25/g' | awk '{printf "%s%%0A", $0}'
             )"
             echo "::error title=build.sh exited with $rc::$report"
