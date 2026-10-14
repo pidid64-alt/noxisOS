@@ -68,7 +68,6 @@ cachyos-hooks
 cachyos-settings
 cachyos-wallpapers
 chwd
-lsb-release
 
 # --- kernel, firmware, microcode -------------------------------------------
 linux-cachyos
