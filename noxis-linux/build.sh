@@ -8,6 +8,7 @@
 #   ./build.sh                      build ./out/noxis-<date>-x86_64.iso
 #   ./build.sh --clean              drop ./work first (fresh package database)
 #   ./build.sh --deps               install the build dependencies and exit
+#   ./build.sh --keep-work          keep the work directory (needs more disk)
 #   ./build.sh --tier v3            build with v3-optimized base packages
 #   ./build.sh --no-verify          skip the package pre-flight check
 #   ./build.sh --help               this help
@@ -93,7 +94,10 @@ fi
 
 echo "==> building the ISO (this takes a while)"
 mkdir -p -- "$out_dir"
-mkarchiso -v -w "$work_dir" -o "$out_dir" "$profile"
+# -r removes the working directory when the build is done (including the
+# multi-gigabyte airootfs tree as soon as the squashfs exists), which keeps the
+# peak disk usage low enough for CI runners.
+mkarchiso -r -v -w "$work_dir" -o "$out_dir" "$profile"
 
 echo
 echo "==> done. ISO(s) in ${out_dir}:"
