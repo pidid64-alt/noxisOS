@@ -186,8 +186,9 @@ jobs:
           sha256sum "$iso" | tee "$iso.sha256"
           mkdir -p parts && cd parts
           split --bytes=1900M --numeric-suffixes=1 --suffix-length=2 "../$iso" "${iso}.part"
+          cp "../$iso.sha256" .
+          sha256sum ./*.iso.part* > SHA256SUMS
           ls -lh .
-          sha256sum ./* > SHA256SUMS
 
       - name: Upload the ISO (split parts)
         uses: actions/upload-artifact@v4
@@ -229,11 +230,12 @@ jobs:
           notes=$(cat <<'EOF'
           NoxisOS Cachy Edition — live/install ISO built on CachyOS/Arch with a Hyprland desktop.
 
-          The image is split into <2 GiB parts (GitHub rejects larger single files). Reassemble and verify:
+          The image is split into <2 GiB parts (GitHub rejects larger single files). Reassemble, verify and write it:
 
           ```bash
           cat noxis-*.iso.part* > noxis.iso
-          sha256sum -c noxis-*.iso.sha256
+          sha256sum -c SHA256SUMS      # checks the parts as downloaded
+          sha256sum noxis.iso          # must equal the hash inside noxis-*.iso.sha256
           sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync
           ```
 
