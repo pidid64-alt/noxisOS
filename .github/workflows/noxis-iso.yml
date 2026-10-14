@@ -13,6 +13,8 @@ on:
     branches:
       - main
       - 'arena/**'
+    tags:
+      - 'v*'
     paths:
       - 'noxis-linux/**'
       - '.github/workflows/noxis-iso.yml'
