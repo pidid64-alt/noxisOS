@@ -26,6 +26,14 @@ if [ ! -e "${LIVE_HOME}/.config/hypr/hyprland.conf" ]; then
 fi
 chown -R "${LIVE_USER}:${LIVE_USER}" "${LIVE_HOME}"
 
+# --- distribution branding ---------------------------------------------------
+# /etc/lsb-release is owned by the `lsb-release` package (a dependency of tools
+# we ship), so our branded file lives in /usr/share/noxis and is copied into
+# place here.
+if [ -f /usr/share/noxis/lsb-release ]; then
+    install -m 0644 /usr/share/noxis/lsb-release /etc/lsb-release
+fi
+
 # --- locales ----------------------------------------------------------------
 if [ ! -e /usr/lib/locale/locale-archive ]; then
     log "generating locales (this takes a moment)"

@@ -59,6 +59,13 @@ differences are deliberate and are listed below.
   `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR` environment that pkexec strips.
 * **Repositories.** `etc/pacman.conf` carries `#<noxis-tier-v3|v4|znver4>`
   blocks; `noxis-repo-tier` toggles them and reinstalls packages on request.
+* **Branding files owned by packages.** `/usr/lib/os-release` (package
+  `filesystem`) and `/etc/lsb-release` (package `lsb-release`, pulled in as a
+  dependency) may not be shipped in `airootfs` — archiso copies it before
+  installing packages and pacman aborts with `exists in filesystem`. The branded
+  `/etc/os-release` *is* ours (`filesystem` keeps backup files intact), and the
+  branded `/etc/lsb-release` is installed from `/usr/share/noxis/lsb-release` by
+  `noxis-live-setup` (live) and `noxis-prepare` (installed system).
 * **Logs in RAM.** `journald` is volatile on the live medium, persistent after
   install.
 

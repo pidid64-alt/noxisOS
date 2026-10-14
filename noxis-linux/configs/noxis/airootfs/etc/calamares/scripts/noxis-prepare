@@ -41,6 +41,11 @@ rm -rf /home/liveuser
 rm -rf /.Trash-1000
 rm -f  /etc/skel/.bash_profile      # no auto-start: SDDM logs the session in
 
+log "writing the NoxisOS identity files"
+if [ -f /usr/share/noxis/lsb-release ]; then
+    install -m 0644 /usr/share/noxis/lsb-release /etc/lsb-release
+fi
+
 log "writing the installed-system welcome files"
 cat > /etc/issue <<'ISSUE'
 
