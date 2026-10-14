@@ -221,6 +221,8 @@ jobs:
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # this job has no checkout, so tell gh which repository it works on
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
@@ -239,5 +241,8 @@ jobs:
           EOF
           )
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "NoxisOS $tag" --notes "$notes"
-          gh release upload "$tag" parts/* --clobber
-          gh release view "$tag" --json assets --jq '.assets[] | "asset: \(.name) \(.size)"'
+
+          mapfile -t files < <(find parts -type f | sort)
+          echo "uploading ${#files[@]} file(s)"
+          gh release upload "$tag" "${files[@]}" --clobber
+          gh release view "$tag" --json assets --jq '.assets[] | "asset: \(.name) \(.size) bytes"'
