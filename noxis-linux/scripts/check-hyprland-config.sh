@@ -24,6 +24,7 @@ conf_abs="$(realpath -m -- "$conf")"
 
 if ! command -v hyprland >/dev/null 2>&1; then
     echo "check-hyprland-config: hyprland is not installed here — skipping (install it to verify)"
+    echo "::warning title=Hyprland config check skipped::hyprland is not installed in this environment"
     exit 0
 fi
 
@@ -37,7 +38,9 @@ out="$(hyprland --verify-config -c "$conf_abs" 2>&1)"
 rc=$?
 
 if (( rc == 0 )); then
-    echo "check-hyprland-config: OK — ${conf} parses cleanly ($(hyprland --version 2>/dev/null | head -n1 || echo 'unknown version'))"
+    version="$(hyprland --version 2>/dev/null | head -n1 || echo 'unknown version')"
+    echo "check-hyprland-config: OK — ${conf} parses cleanly (${version})"
+    echo "::notice title=Hyprland config OK::${version} accepted $(basename -- "$conf") without errors"
     exit 0
 fi
 
@@ -53,4 +56,6 @@ fi
 echo "check-hyprland-config: warning: hyprland --verify-config did not run in this environment (exit ${rc}):"
 printf '%s\n' "$out" | tail -5
 echo "check-hyprland-config: this looks like an environment limitation (no DRM/seat), not a config error"
+first_line="$(printf '%s\n' "$out" | grep -m1 . || echo 'no output')"
+echo "::warning title=Hyprland config check skipped::hyprland --verify-config exited ${rc} in this environment: ${first_line}"
 exit 0
