@@ -122,9 +122,12 @@ sha256sum noxis.iso                      # must equal the hash in noxis-*.iso.sh
 
 | File | Size (bytes) | |
 |------|--------------|---|
-| `noxis-2026.10.14-x86_64.iso.part01` | 1 992 294 400 | 1,86 GiB |
-| `noxis-2026.10.14-x86_64.iso.part02` | 1 656 930 304 | 1,54 GiB |
-| joined `noxis-2026.10.14-x86_64.iso` | **3 649 224 704** | **3,40 GiB — this is the number to check** |
+| `noxis-2026.10.15-x86_64.iso.part01` | 1 992 294 400 | 1,86 GiB |
+| `noxis-2026.10.15-x86_64.iso.part02` | 1 660 026 880 | 1,55 GiB |
+| joined `noxis-2026.10.15-x86_64.iso` | **3 652 321 280** | **3,40 GiB — this is the number to check** |
+
+Every release names its own files; compare what you downloaded with the asset
+list on the release page (and `SHA256SUMS` covers the parts byte for byte).
 
 ### Write the stick
 
