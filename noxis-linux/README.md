@@ -141,14 +141,34 @@ On Windows use [Rufus](https://rufus.ie) in *DD image mode* (or balenaEtcher);
 
 ### Try it in a VM
 
+The image is a real hybrid: BIOS boots through El Torito + `isohybrid` MBR,
+UEFI through El Torito + an embedded EFI system partition, so it works both as
+a **CD/DVD image** and as a **disk image** — pick whichever is easier.
+
 ```bash
-qemu-system-x86_64 -enable-kvm -m 4096 -smp 4 \
+# QEMU: as a CD
+qemu-system-x86_64 -enable-kvm -m 4096 -smp 4 -cdrom noxis.iso -boot d \
+  -device virtio-vga-gl -display gtk,gl=on
+# QEMU: as a disk (BIOS and UEFI with -bios .../OVMF_CODE.fd)
+qemu-system-x86_64 -enable-kvm -m 4096 -smp 4 -bios /usr/share/edk2/x64/OVMF.4m.fd \
   -device virtio-vga-gl -display gtk,gl=on \
-  -drive file=noxis-linux/out/noxis-*-x86_64.iso,format=raw,if=virtio
+  -drive file=noxis.iso,format=raw,if=virtio
 ```
 
-Hyprland needs 3D acceleration: keep `virtio-vga-gl`/`-display gl=on` (or use
-`-vga std` with the `safe graphics` boot entry).
+| Hypervisor | What to do |
+|------------|------------|
+| **VirtualBox** | *Settings → Storage → Controller: IDE → Add Optical Drive → Choose a disk file* → `noxis.iso`. Enable *System → Motherboard → Enable EFI* if you want to test UEFI, and *Display → Graphics Controller: VMSVGA* + *Enable 3D Acceleration* for Hyprland |
+| **VMware Workstation/Fusion** | *VM settings → CD/DVD (SATA) → Use ISO image* → the file; *Options → Advanced → Firmware type: UEFI* for the UEFI path |
+| **Hyper-V** | Generation 2 (UEFI) works: *Settings → DVD Drive → Insert Disk* → `noxis.iso`. **Turn Secure Boot off** (*Security → Secure Boot → Disable*) — the shipped bootloader is unsigned, and this is the usual "no bootable device" in Hyper-V |
+| **virt-manager / Proxmox** | Add a CDROM device with the ISO, or import the ISO as a disk (`raw`); set the boot order to it |
+
+Checks when the firmware insists on "no bootable device":
+
+1. The file that you attached must be the **joined** image: `3 649 224 704` bytes for the 2026.10 release. Two `dd` calls onto the same output file silently overwrite each other — the second one starts at offset 0 again — which is exactly how a 3.4 GiB ISO turns into a 1.6 GiB one that boots nothing. Use `cat part01 part02 > noxis.iso` (or the `assemble-iso` helpers), never `dd of=<same file>` twice, and add `oflag=append conv=notrunc` if you really are appending to a device.
+2. Attach it as **CD/DVD**, or as a disk with the right firmware. A UEFI machine booting nothing usually means the image went to an IDE port whose controller is not bootable.
+3. Try the other firmware mode (BIOS ↔ UEFI) and disable Secure Boot.
+
+Hyprland needs 3D acceleration: `virtio-vga-gl`/`-display gl=on` in QEMU, VMSVGA + 3D in VirtualBox, *Accelerate 3D graphics* in VMware. Without it, boot the `safe graphics` entry and use the plain TTY.
 
 ---
 
