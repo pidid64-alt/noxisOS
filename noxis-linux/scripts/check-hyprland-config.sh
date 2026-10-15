@@ -34,7 +34,11 @@ export HOME="${tmp}/home" XDG_CONFIG_HOME="${tmp}/home/.config" XDG_RUNTIME_DIR=
 mkdir -p -- "$HOME" "$XDG_CONFIG_HOME/hypr" "$XDG_RUNTIME_DIR"
 chmod 700 -- "$XDG_RUNTIME_DIR"
 
-out="$(hyprland --verify-config -c "$conf_abs" 2>&1)"
+args=(--verify-config -c "$conf_abs")
+# Hyprland refuses to run as root; CI containers are root, so tell it we know.
+(( EUID == 0 )) && args+=(--i-am-really-stupid)
+
+out="$(hyprland "${args[@]}" 2>&1)"
 rc=$?
 
 if (( rc == 0 )); then
@@ -56,6 +60,10 @@ fi
 echo "check-hyprland-config: warning: hyprland --verify-config did not run in this environment (exit ${rc}):"
 printf '%s\n' "$out" | tail -5
 echo "check-hyprland-config: this looks like an environment limitation (no DRM/seat), not a config error"
-first_line="$(printf '%s\n' "$out" | grep -m1 . || echo 'no output')"
-echo "::warning title=Hyprland config check skipped::hyprland --verify-config exited ${rc} in this environment: ${first_line}"
+# Say what actually happened, so this is diagnosable from the check annotations
+# alone (container logs are not reachable from outside the runner).
+while IFS= read -r line; do
+    [[ -n ${line//[[:space:]]/} ]] || continue
+    echo "::warning title=hyprland --verify-config output::$(cut -c1-160 <<<"$line")"
+done < <(head -6 <<<"$out")
 exit 0
