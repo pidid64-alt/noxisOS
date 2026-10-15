@@ -5,7 +5,7 @@ PROFILE := configs/noxis
 OUT     := out
 WORK    := work
 
-.PHONY: help all iso deps verify assets tier-v3 tier-v4 clean distclean run shellcheck
+.PHONY: help all iso deps verify assets tier-v3 tier-v4 assemble clean distclean run shellcheck
 
 help:
 	@sed -n '2,14p' build.sh
@@ -16,6 +16,8 @@ help:
 	@echo "  make verify     check that every package exists in the repos"
 	@echo "  make assets     regenerate branding PNGs from assets/ (needs Pillow)"
 	@echo "  make tier-v3    build with x86-64-v3 optimized base packages"
+	@echo "  make assemble   join+verify ISO parts downloaded from a release"
+	@echo "                  (parts='DIR', out='FILE'; default: . and detected name)"
 	@echo "  make clean      remove the ISO output"
 	@echo "  make distclean  also remove the mkarchiso work directory"
 
@@ -38,6 +40,11 @@ tier-v3:
 
 tier-v4:
 	./build.sh --tier v4
+
+# Join the parts of a downloaded release and verify them:
+#   make assemble parts=~/Downloads
+assemble:
+	./scripts/assemble-iso.sh --parts '$(parts)' $(if $(out),--out '$(out)',)
 
 clean:
 	rm -rf -- $(OUT)

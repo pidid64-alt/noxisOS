@@ -70,21 +70,34 @@ with `-device virtio-vga` and passthrough). On plain `-vga std` pick the
 
 ## 4. CI (GitHub Actions)
 
-`.github/workflows/noxis-iso.yml` has two jobs:
+`.github/workflows/noxis-iso.yml` has three jobs:
 
 | Job | When | What |
 |-----|------|------|
 | `verify` | every push/PR touching `noxis-linux/**` | installs prerequisites, trusts the CachyOS key, resolves the package list, parses every shell script and Calamares YAML config |
-| `build` | `workflow_dispatch`, `v*` tags or a published release | builds the ISO in an `archlinux:latest` container and uploads it |
+| `build` | `workflow_dispatch`, `v*` tags or a published release | builds the ISO in an `archlinux:latest` container, splits it and uploads the parts as an artifact |
+| `release` | `v*` tags only | downloads that artifact on the host runner (where `gh` exists) and attaches the parts, `SHA256SUMS` and `noxis-*.iso.sha256` to the release for the tag |
 
-GitHub refuses single files above 2 GiB, so the ISO is split:
+GitHub refuses single files above 2 GiB, so the ISO is split into `part01`,
+`part02`, … `build` asserts that the parts reassemble into the image that was
+just built (`sha256` of `cat parts*` equals the ISO hash), so a broken split can
+never reach a release.
+
+Joining and verifying on your side — the helper does every check and refuses a
+truncated image, which is what produces "no bootable device":
 
 ```bash
-cat noxis-2026.10.14-x86_64.iso.part* > noxis.iso
-sha256sum -c noxis-2026.10.14-x86_64.iso.sha256
+noxis-linux/scripts/assemble-iso.sh --parts ~/Downloads   # Linux / macOS
 ```
 
-Tag builds (`v1.0` etc.) additionally attach the parts to the GitHub release.
+```powershell
+.\noxis-linux\scripts\assemble-iso.ps1 -Parts "$env:USERPROFILE\Downloads"
+```
+
+By hand: `cat noxis-*.iso.part* > noxis.iso`, then `sha256sum -c SHA256SUMS`
+(parts) and `sha256sum noxis.iso` (whole image, hash from
+`noxis-*.iso.sha256` — note that file names the image, so compare the hash value
+rather than using `sha256sum -c` on a renamed file).
 
 ## 5. Rebuilding after an upstream change
 

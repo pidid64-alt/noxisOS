@@ -188,6 +188,14 @@ jobs:
           split --bytes=1900M --numeric-suffixes=1 --suffix-length=2 "../$iso" "${iso}.part"
           cp "../$iso.sha256" .
           sha256sum ./*.iso.part* > SHA256SUMS
+          # prove that what we publish rebuilds the image byte for byte
+          joined=$(cat ./*.iso.part* | sha256sum | cut -d' ' -f1)
+          image=$(cut -d' ' -f1 "../$iso.sha256")
+          if [ "$joined" != "$image" ]; then
+            echo "::error title=Reassembly check failed::$iso does not rebuild from its own parts"
+            exit 1
+          fi
+          echo "::notice title=Reassembly check::$(ls -1 ./*.iso.part* | wc -l) part(s) rebuild $iso byte for byte"
           ls -lh .
 
       - name: Upload the ISO (split parts)
@@ -228,21 +236,50 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           notes=$(cat <<'EOF'
-          NoxisOS Cachy Edition — live/install ISO built on CachyOS/Arch with a Hyprland desktop.
+          NoxisOS Cachy Edition — a live/install ISO built on CachyOS/Arch with a Hyprland desktop.
 
-          The image is split into <2 GiB parts (GitHub rejects larger single files). Reassemble, verify and write it:
+          ### Download every file below into one folder
+
+          GitHub rejects single files over 2 GiB, so the image is published as parts. Joining only one of them gives a truncated image — that is the classic "no bootable device" after writing the stick.
 
           ```bash
+          # Linux / macOS — then verify
           cat noxis-*.iso.part* > noxis.iso
-          sha256sum -c SHA256SUMS      # checks the parts as downloaded
+          sha256sum -c SHA256SUMS      # the parts, as downloaded
           sha256sum noxis.iso          # must equal the hash inside noxis-*.iso.sha256
-          sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync
+
+          # Windows (cmd), with the exact file names shown below
+          copy /b noxis-<date>-x86_64.iso.part01+noxis-<date>-x86_64.iso.part02 noxis.iso
           ```
 
-          Boots on BIOS (syslinux) and UEFI (systemd-boot): default kernel `linux-cachyos`, an LTS fallback and a `nomodeset` safe-graphics entry.
+          The repository ships a helper that does the join and all the checks, and refuses to emit a truncated image:
+
+          ```bash
+          ./noxis-linux/scripts/assemble-iso.sh          # Linux / macOS
+          .\noxis-linux\scripts\assemble-iso.ps1         # Windows PowerShell
+          ```
+
+          ### Write it raw to the whole device
+
+          To the **device** (e.g. `/dev/sdX`, "Disk 1"), never to a partition and never as a file copy:
+
+          ```bash
+          sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync
+          sudo cmp -n $(stat -c%s noxis.iso) noxis.iso /dev/sdX && echo 'stick OK'
+          ```
+
+          On Windows use [Rufus](https://rufus.ie) in *DD image mode*, or balenaEtcher.
+
+          ### Booting
+
+          Both BIOS (syslinux) and UEFI (systemd-boot) are supported: default kernel `linux-cachyos`, an LTS fallback and a `nomodeset` safe-graphics entry. If the firmware says "no bootable device", check that the stick holds the full image (size and hash above), and disable Secure Boot — the shipped bootloader is not signed.
           EOF
           )
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "NoxisOS $tag" --notes "$notes"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes "$notes"          # keep the instructions current
+          else
+            gh release create "$tag" --title "NoxisOS $tag" --notes "$notes"
+          fi
 
           mapfile -t files < <(find parts -type f | sort)
           echo "uploading ${#files[@]} file(s)"

@@ -36,6 +36,23 @@ files, which pacman keeps as they are.
 * `The 'syslinux' package is missing from the package list!` (fatal) → keep
   `syslinux` in `packages.x86_64`; BIOS boot does not work without it.
 
+## The USB stick does not boot ("no bootable device", "no bootable medium", black screen)
+
+Work through these in order — the first one is by far the most common:
+
+| Check | What to look at |
+|-------|-----------------|
+| **Is the image complete?** | The release publishes an ISO as several `<2 GiB` parts. Joining only some of them (or letting a download finish halfway) gives a file Windows/Linux tools happily write — and it boots nothing. Expected total for `noxis-2026.10.14-x86_64.iso`: **3 649 224 704 bytes** (`part01` 1 992 294 400 + `part02` 1 656 930 304). Run `noxis-linux/scripts/assemble-iso.sh` (or `assemble-iso.ps1`): it verifies every part against `SHA256SUMS` and the joined image against `noxis-*.iso.sha256` and refuses a truncated result |
+| **How was the stick written?** | The ISO must be written **raw to the whole device**: `sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync`, Rufus in *DD image mode*, or balenaEtcher. Copying the ISO file onto a FAT stick, or writing to `/dev/sdX1` instead of `/dev/sdX`, produces exactly this message |
+| **Did the write land?** | `sudo cmp -n $(stat -c%s noxis.iso) noxis.iso /dev/sdX && echo 'stick OK'` — read back and compare, no guessing |
+| **Secure Boot** | The shipped `systemd-boot`/syslinux binaries are unsigned, so firmware with Secure Boot on may skip the stick entirely. Disable Secure Boot (BIOS → Security → Secure Boot → *Disabled*) or enroll the binaries |
+| **Boot mode** | Both modes are supported, so try the other one: the one-time boot menu (`F12`/`F11`/`Esc`) usually lists the stick twice — as `UEFI: <stick>` and as a plain BIOS entry |
+| **VirtualBox/VMware** | These emulate BIOS but often need EFI enabled to boot hybrid ISOs, and Hyprland needs 3D acceleration; QEMU with `-device virtio-vga-gl -display gtk,gl=on` is the supported path |
+| **Cheap/old stick** | Some controllers corrupt large writes; format nothing, just rewrite with `dd` and re-check with `cmp`, or try another stick |
+| **Filesystem of the stick** | Irrelevant — `dd` overwrites the partition table as well. Do **not** format the stick "to make it bootable" first |
+
+After the medium boots, `archiso` finds everything from `/run/archiso/bootmnt`; if the live system starts but the installer complains about `airootfs.sfs`, the medium was again written as a file copy rather than as a raw image.
+
 ## The live session does not appear
 
 | Symptom | Check |

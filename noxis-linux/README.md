@@ -26,10 +26,14 @@ disk with Calamares — **without any network connection**.
   В облаке — через GitHub Actions: **Actions → NoxisOS ISO → Run workflow**.
 * Готовый ISO (~3.4 ГБ) лежит на странице
   [Releases](https://github.com/pidid64-alt/noxisOS/releases) — плюс он же
-  доступен артефактом сборки. Образ разбит на части по ~1.9 ГБ (ограничение
-  GitHub — 2 ГБ на файл). Склейка и проверка: `cat noxis-*.iso.part* > noxis.iso`,
-  затем `sha256sum -c SHA256SUMS` и `sha256sum noxis.iso`.
-* Запись на флешку: `sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync`.
+  доступен артефактом сборки. Образ разбит на части по ~1,9 ГБ (ограничение
+  GitHub — 2 ГБ на файл), поэтому **качать нужно все части**.
+* Склейка и проверка — одной командой: `./scripts/assemble-iso.sh`
+  (Linux/macOS) или `scripts\assemble-iso.ps1` (Windows PowerShell). Скрипт сам
+  проверяет хеши и отказывается делать обрезанный образ — именно он даёт
+  «no bootable device» при записи на флешку.
+* Запись на флешку: `sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync`
+  (на Windows — Rufus в режиме *DD image mode*).
 * В live-сессии: `Super+Return` — терминал, `Super+D` — меню, `noxis-install` —
   установщик, `noxis-welcome` — подсказки.
 
@@ -89,15 +93,51 @@ git tag -a v2026.11-alpha -m "NoxisOS Cachy Edition 2026.11 alpha" && git push o
 picking a repository tier) is enabled as well and produces the same artifact in
 ~20–25 minutes without touching a release.
 
-Download the parts (from the release page or the run's artifacts), then join,
-verify and write the image:
+### Download, join, verify
+
+Download **every** file of the release into one folder — a partial join is the
+main cause of "no bootable device". Then use the helper, which checks each part
+against `SHA256SUMS`, joins them in order and verifies the image against
+`noxis-*.iso.sha256` (it stops with an explanation instead of writing a
+truncated file):
 
 ```bash
-cat noxis-*.iso.part* > noxis.iso
-sha256sum -c SHA256SUMS      # the parts, as downloaded
-sha256sum noxis.iso          # must equal the hash inside noxis-*.iso.sha256
-sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync
+noxis-linux/scripts/assemble-iso.sh                 # Linux / macOS
+noxis-linux/scripts/assemble-iso.sh --parts ~/Downloads
 ```
+
+```powershell
+# Windows PowerShell
+.\noxis-linux\scripts\assemble-iso.ps1 -Parts "$env:USERPROFILE\Downloads" -Out noxis.iso
+```
+
+By hand it is the same thing, but nothing stops you from joining one part:
+
+```bash
+cat noxis-*.iso.part* > noxis.iso        # Linux / macOS
+copy /b noxis-<date>-x86_64.iso.part01+noxis-<date>-x86_64.iso.part02 noxis.iso   # Windows cmd
+sha256sum -c SHA256SUMS                  # the parts, as downloaded
+sha256sum noxis.iso                      # must equal the hash in noxis-*.iso.sha256
+```
+
+| File | Size (bytes) | |
+|------|--------------|---|
+| `noxis-2026.10.14-x86_64.iso.part01` | 1 992 294 400 | 1,86 GiB |
+| `noxis-2026.10.14-x86_64.iso.part02` | 1 656 930 304 | 1,54 GiB |
+| joined `noxis-2026.10.14-x86_64.iso` | **3 649 224 704** | **3,40 GiB — this is the number to check** |
+
+### Write the stick
+
+Write the image **raw to the whole device** — not to a partition and not as a
+file copy:
+
+```bash
+sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync
+sudo cmp -n $(stat -c%s noxis.iso) noxis.iso /dev/sdX && echo 'stick OK'
+```
+
+On Windows use [Rufus](https://rufus.ie) in *DD image mode* (or balenaEtcher);
+"ISO image mode" is a risk if you also want to check the size afterwards.
 
 ### Try it in a VM
 
