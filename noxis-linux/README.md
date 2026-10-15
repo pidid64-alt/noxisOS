@@ -139,6 +139,12 @@ sudo cmp -n $(stat -c%s noxis.iso) noxis.iso /dev/sdX && echo 'stick OK'
 On Windows use [Rufus](https://rufus.ie) in *DD image mode* (or balenaEtcher);
 "ISO image mode" is a risk if you also want to check the size afterwards.
 
+### Check the desktop config without booting
+
+```bash
+make hyprcheck     # walks the shipped Hyprland config through Hyprland's own parser
+```
+
 ### Try it in a VM
 
 The image is a real hybrid: BIOS boots through El Torito + `isohybrid` MBR,

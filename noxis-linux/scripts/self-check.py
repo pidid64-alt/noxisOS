@@ -112,11 +112,33 @@ def check_profiledef(profile: pathlib.Path, problems: list[str]) -> None:
         fail(problems, "profiledef.sh is missing")
         return
     airootfs = profile / "airootfs"
-    for path in re.findall(r'\["([^"]+)"\]="\d+:\d+:\d+"', profiledef.read_text()):
+    text = profiledef.read_text()
+    entries = dict(re.findall(r'\["([^"]+)"\]="\d+:\d+:(\d+)"', text))
+    for path in entries:
         if path in RUNTIME_CREATED:
             continue
         if not (airootfs / path.lstrip("/")).exists():
             fail(problems, f"profiledef.sh: file_permissions lists '{path}', which the profile does not ship")
+
+    # The other direction, and the one that actually bit us: mkarchiso copies
+    # airootfs with 'cp -a --no-preserve=ownership,mode', so the executable bit
+    # of a shipped script survives only if file_permissions sets it again.
+    for path in airootfs.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            first = path.read_text(errors="ignore").split("\n", 1)[0]
+        except OSError:
+            continue
+        if not first.startswith("#!"):
+            continue
+        key = "/" + str(path.relative_to(airootfs))
+        mode = entries.get(key)
+        if mode is None:
+            fail(problems, f"profiledef.sh: '{key}' is a script but has no file_permissions entry "
+                           f"(mkarchiso does not preserve the executable bit)")
+        elif mode[-1] not in "57":
+            fail(problems, f"profiledef.sh: '{key}' is a script but file_permissions gives it mode {mode}")
 
 
 def check_referenced_paths(profile: pathlib.Path, problems: list[str]) -> None:

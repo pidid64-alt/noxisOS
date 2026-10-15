@@ -138,3 +138,17 @@ systemd-boot for UEFI (`/loader/entries/*.conf`). Both reference
   mkarchiso exist but are unused).
 * No user-mode components from the bare-metal `noxis` kernel in this repository
   — that is a separate, unrelated learning OS; this directory is the distro.
+
+## Two things mkarchiso does not tell you
+
+* **Modes are not copied.** `airootfs` is copied with `cp -af --no-preserve=ownership,mode`,
+  so every executable bit has to be re-declared in `file_permissions` — otherwise
+  the file ships as `0644` and `pkexec`/Calamares fail with "Permission denied".
+  `scripts/self-check.py` fails when a shebang file is missing from the array.
+* **Package-owned paths win.** Anything a package already installs
+  (`/usr/lib/os-release`, `/etc/lsb-release`, `/etc/calamares/modules/*.conf`)
+  must not be shipped from `airootfs`: pacstrap aborts with
+  `exists in filesystem`. The branded `lsb-release` therefore lives in
+  `/usr/share/noxis/` and is copied into place by `noxis-live-setup` /
+  Calamares' `noxis-prepare`, and Calamares overrides are named
+  `noxis-<module>.conf` and bound through `instances:`.

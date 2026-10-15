@@ -53,6 +53,49 @@ Work through these in order — the first one is by far the most common:
 
 After the medium boots, `archiso` finds everything from `/run/archiso/bootmnt`; if the live system starts but the installer complains about `airootfs.sfs`, the medium was again written as a file copy rather than as a raw image.
 
+## A program in the image is not executable ("Permission denied", pkexec fails)
+
+`mkarchiso` copies `airootfs` with **`cp -af --no-preserve=ownership,mode`**, so
+the file modes in the image come from `file_permissions` in `profiledef.sh`,
+*not* from the files in the repository. A script that is missing from that array
+lands on the ISO as `0644` and cannot be executed — which is how `noxis-install`
+died with `Error executing /usr/local/bin/noxis-run-as-root: Permission denied`
+even though the file is `755` in git.
+
+Two guards exist, use both:
+
+```bash
+python3 scripts/self-check.py      # fails if a shebang file has no 755 entry
+make hyprcheck                     # not related, but also worth running
+```
+
+Quick check inside a live session: `ls -l /usr/local/bin/noxis-* /etc/calamares/scripts/` —
+everything with a `#!` must be `-rwxr-xr-x`. A temporary workaround on a running
+medium is `sudo chmod 755 /usr/local/bin/noxis-run-as-root /etc/calamares/scripts/noxis-*`.
+
+## Hyprland shows a red "Config error" overlay
+
+Hyprland renames and removes options between releases (rolling distro!), and the
+errors are printed one per line. Reproduce them outside the desktop with:
+
+```bash
+hyprland --verify-config -c ~/.config/hypr/hyprland.conf
+```
+
+`make hyprcheck` runs the same check against the shipped profile, and CI does it
+on every push, so a renamed option fails the *verify* job instead of the user's
+screen. Recent examples that were fixed this way:
+
+| Old syntax | Current syntax |
+|------------|----------------|
+| `misc:vfr` | removed (VRR only: `misc:vrr`) |
+| `gestures:workspace_swipe`, `…_fingers` | removed — swiping is always on, only `workspace_swipe_distance` / `…_cancel_ratio` / `…_create_new` remain |
+| `bind = $mod, J, togglesplit` | `bind = $mod, J, layoutmsg, togglesplit` |
+| `windowrulev2 = float, class:^(x)$` | `windowrule = float on, match:class ^(x)$` |
+| `layerrule = ignorealpha 0.3, waybar` | `layerrule = ignore_alpha 0.3, match:namespace ^(waybar)$` |
+
+The vocabulary the config may use: props are `match:class|title|initial_class|initial_title|float|tag|xwayland|fullscreen|pin|focus|group|modal|fullscreen_state_internal|fullscreen_state_client|workspace|content|xdg_tag|namespace`, every effect needs a value (`on`/`off` for switches, numbers for `size`/`opacity`, `fullscreen`/`focus`/`always`/`none` for `idle_inhibit`).
+
 ## The live session does not appear
 
 | Symptom | Check |
