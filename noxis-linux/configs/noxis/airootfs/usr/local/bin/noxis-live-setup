@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# noxis-live-setup — runs once per boot on the live medium
+# ---------------------------------------------------------------------------
+# * seeds /home/liveuser from /etc/skel the first time it is needed
+# * generates the locales listed in /etc/locale.gen
+# * refreshes the desktop/icon databases so launchers are populated
+# ---------------------------------------------------------------------------
+set -uo pipefail
+
+LIVE_USER=liveuser
+LIVE_HOME=/home/${LIVE_USER}
+log() { printf '[noxis-live] %s\n' "$*"; }
+
+# --- home directory ---------------------------------------------------------
+if ! getent passwd "${LIVE_USER}" >/dev/null; then
+    log "creating ${LIVE_USER} (systemd-sysusers missed it?)"
+    useradd -m -u 1000 -G wheel,audio,video,storage,optical,network,power,rfkill,lp,sys,users,uucp,adm \
+        -c "NoxisOS Live User" -s /bin/bash "${LIVE_USER}" || true
+fi
+
+install -d -m 0700 -o "${LIVE_USER}" -g "${LIVE_USER}" "${LIVE_HOME}"
+if [ ! -e "${LIVE_HOME}/.config/hypr/hyprland.conf" ]; then
+    log "seeding ${LIVE_HOME} from /etc/skel"
+    cp -a /etc/skel/. "${LIVE_HOME}/"
+fi
+chown -R "${LIVE_USER}:${LIVE_USER}" "${LIVE_HOME}"
+
+# --- distribution branding ---------------------------------------------------
+# /etc/lsb-release is owned by the `lsb-release` package (a dependency of tools
+# we ship), so our branded file lives in /usr/share/noxis and is copied into
+# place here.
+if [ -f /usr/share/noxis/lsb-release ]; then
+    install -m 0644 /usr/share/noxis/lsb-release /etc/lsb-release
+fi
+
+# --- locales ----------------------------------------------------------------
+if [ ! -e /usr/lib/locale/locale-archive ]; then
+    log "generating locales (this takes a moment)"
+    locale-gen >/dev/null 2>&1 || true
+fi
+
+# --- caches -----------------------------------------------------------------
+command -v update-desktop-database >/dev/null && update-desktop-database -q || true
+command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+
+# --- gvfs trash workaround (https://bugzilla.gnome.org/show_bug.cgi?id=748248) --
+install -d -m 0700 -o "${LIVE_USER}" -g "${LIVE_USER}" "/.Trash-1000/"{files,info,expunged} 2>/dev/null || true
+
+# --- XDG user directories ---------------------------------------------------
+if command -v runuser >/dev/null; then
+    runuser -u "${LIVE_USER}" -- xdg-user-dirs-update >/dev/null 2>&1 || true
+fi
+
+log "ready — starting the desktop session"

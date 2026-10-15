@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# noxis-repo-tier -- switch the CachyOS optimized repository tier
+# ---------------------------------------------------------------------------
+# The CachyOS project recompiles Arch packages for higher CPU baselines. The
+# tier blocks in /etc/pacman.conf are marked, so switching is a one-liner:
+#
+#   noxis-repo-tier --detect          what does this CPU support?
+#   noxis-repo-tier --auto            detect and switch (reinstalls packages)
+#   noxis-repo-tier --tier v3         v3 | v4 | znver4 | base
+#   noxis-repo-tier --no-reinstall    edit the config only
+#
+# After switching, the installed packages are reinstalled so they come from the
+# new tier (this is what CachyOS does on a fresh install too).
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+CONF=${NOXIS_PACMAN_CONF:-/etc/pacman.conf}
+QUIET=0
+REINSTALL=1
+ACTION=detect
+TIER=""
+
+log() { (( QUIET )) || printf '[repo-tier] %s\n' "$*"; }
+die() { printf '[repo-tier] error: %s\n' "$*" >&2; exit 1; }
+
+while (($#)); do
+    case "$1" in
+        --detect)       ACTION=detect ;;
+        --auto)         ACTION=tier; TIER=auto ;;
+        --base)         ACTION=tier; TIER=base ;;
+        --tier)         ACTION=tier; TIER="${2:-}"; shift ;;
+        --no-reinstall) REINSTALL=0 ;;
+        --quiet|-q)     QUIET=1 ;;
+        --help|-h)      sed -n '2,16p' "$0"; exit 0 ;;
+        *)              die "unknown option '$1' (try --help)" ;;
+    esac
+    shift
+done
+
+cpu_supports() {
+    /lib/ld-linux-x86-64.so.2 --help 2>/dev/null | grep -q "^  $1 (supported"
+}
+
+detect_tier() {
+    if cpu_supports x86-64-v4; then
+        if grep -qm1 '^vendor_id.*AMD' /proc/cpuinfo 2>/dev/null; then echo znver4; else echo v4; fi
+    elif cpu_supports x86-64-v3; then
+        echo v3
+    else
+        echo base
+    fi
+}
+
+show_detect() {
+    printf '[repo-tier] CPU support: x86-64'
+    cpu_supports x86-64-v2 && printf ' v2'
+    cpu_supports x86-64-v3 && printf ' v3'
+    cpu_supports x86-64-v4 && printf ' v4'
+    printf '\n[repo-tier] recommended tier: %s\n' "$(detect_tier)"
+}
+
+[[ $ACTION == detect ]] && { show_detect; exit 0; }
+[[ $TIER == auto ]] && TIER=$(detect_tier)
+case "$TIER" in
+    base|v3|v4|znver4) ;;
+    *) die "unknown tier '${TIER:-}' (use base|v3|v4|znver4)" ;;
+esac
+[[ -w $CONF ]] || die "$CONF is not writable (run with sudo)"
+
+noxis_repo_tier_py=$(mktemp --suffix=.py)
+trap 'rm -f "$noxis_repo_tier_py"' EXIT
+cat >"$noxis_repo_tier_py" <<'PY'
+import re
+import sys
+import pathlib
+
+conf, tier = sys.argv[1], sys.argv[2]
+text = pathlib.Path(conf).read_text(encoding="utf-8")
+tiers = ("v3", "v4", "znver4")
+
+for name in tiers:
+    pattern = re.compile(rf"^#<noxis-tier-{name}>$\n(.*?)^#</noxis-tier-{name}>$",
+                         re.DOTALL | re.MULTILINE)
+    match = pattern.search(text)
+    if not match:
+        continue
+    enable = (name == tier)
+    out = []
+    for line in match.group(1).splitlines():
+        stripped = line.lstrip()
+        if enable:
+            out.append(stripped[1:] if stripped.startswith("#") else line)
+        else:
+            out.append(line if stripped.startswith("#") else "#" + line)
+    text = text[:match.start(1)] + "\n".join(out) + "\n" + text[match.end(1):]
+
+pathlib.Path(conf).write_text(text, encoding="utf-8")
+PY
+python3 "$noxis_repo_tier_py" "$CONF" "$TIER"
+
+if [[ $TIER == base ]]; then
+    log "repository tier disabled (plain Arch + CachyOS x86-64 packages)"
+else
+    log "enabled the [cachyos-${TIER}] repository tier in $CONF"
+fi
+
+if (( REINSTALL )); then
+    log "refreshing package databases"
+    pacman -Sy --noconfirm >/dev/null
+    log "reinstalling installed packages from the new tier (this takes a while)"
+    pacman -Qqn | pacman -S --noconfirm -
+    log "done — reboot to pick up the new binaries"
+else
+    log "config only; run 'pacman -Qqn | sudo pacman -S -' (or re-run without --no-reinstall)"
+fi

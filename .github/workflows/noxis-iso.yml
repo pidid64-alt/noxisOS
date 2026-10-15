@@ -1,0 +1,293 @@
+name: NoxisOS ISO
+
+# ---------------------------------------------------------------------------
+# Builds the NoxisOS Cachy Edition ISO inside an Arch Linux container.
+#
+#  * every push that touches the distro runs the fast package pre-flight
+#  * `workflow_dispatch` (or a v* tag) runs the full ISO build and uploads
+#    the image as artifact(s) — split into ~1.9 GiB parts, because single
+#    files above 2 GiB cannot be uploaded
+# ---------------------------------------------------------------------------
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+    tags:
+      - 'v*'
+    paths:
+      - 'noxis-linux/**'
+      - '.github/workflows/noxis-iso.yml'
+  pull_request:
+    paths:
+      - 'noxis-linux/**'
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'CachyOS repository tier for the base packages'
+        type: choice
+        default: base
+        options: [base, v3, v4, znver4]
+      build_iso:
+        description: 'Also build the ISO (takes ~30-45 min)'
+        type: boolean
+        default: true
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  PROFILE: noxis-linux/configs/noxis
+  CACHYOS_KEY: F3B607488DB35A47
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Fast sanity check: does every package in packages.x86_64 exist?
+  # -------------------------------------------------------------------------
+  verify:
+    name: Verify package list
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install prerequisites
+        run: |
+          pacman -Sy --noconfirm --needed archlinux-keyring pacman-contrib python-yaml shellcheck
+
+      - name: Trust the CachyOS repositories
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          for i in 1 2 3; do
+            pacman-key --recv-keys "$CACHYOS_KEY" --keyserver keyserver.ubuntu.com && break
+            sleep 10
+          done
+          pacman-key --lsign-key "$CACHYOS_KEY"
+
+      - name: Check that every package resolves
+        run: ./noxis-linux/scripts/check-packages.sh "$PROFILE"
+
+      - name: Profile self-check (paths, configs, cross-references)
+        run: python3 noxis-linux/scripts/self-check.py "$PROFILE"
+
+      - name: Install Hyprland (to verify the shipped config with its own parser)
+        run: pacman -Sy --noconfirm --needed --disable-download-timeout hyprland
+
+      - name: Hyprland configuration check
+        run: ./noxis-linux/scripts/check-hyprland-config.sh "$PROFILE"
+
+      - name: Shell syntax check
+        run: |
+          for f in noxis-linux/build.sh noxis-linux/scripts/*.sh \
+                   "$PROFILE"/airootfs/usr/local/bin/* \
+                   "$PROFILE"/airootfs/etc/calamares/scripts/*; do
+            [ -f "$f" ] && bash -n "$f"
+          done
+          echo "all scripts parse"
+
+      - name: Shellcheck (errors gate the build, warnings are reported)
+        run: |
+          set +e
+          shellcheck -S error -f gcc -x noxis-linux/build.sh noxis-linux/scripts/*.sh \
+            "$PROFILE"/airootfs/usr/local/bin/* "$PROFILE"/airootfs/etc/calamares/scripts/*
+          rc=$?
+          shellcheck -S warning -f gcc -x noxis-linux/build.sh noxis-linux/scripts/*.sh \
+            "$PROFILE"/airootfs/usr/local/bin/* "$PROFILE"/airootfs/etc/calamares/scripts/* || true
+          exit $rc
+
+  # -------------------------------------------------------------------------
+  # The real thing: build the ISO.
+  # -------------------------------------------------------------------------
+  build:
+    name: Build ISO (${{ github.event.inputs.tier || 'base' }})
+    needs: verify
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.build_iso == 'true') || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show disk space
+        run: |
+          df -h /
+          # the container's own cache is not needed and costs ~1 GiB
+          pacman -Scc --noconfirm || true
+          df -h /
+
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            archiso git sudo squashfs-tools dosfstools mtools libisoburn \
+            syslinux grub edk2-shell zstd which python python-yaml
+
+      - name: Trust the CachyOS repositories
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          for i in 1 2 3; do
+            pacman-key --recv-keys "$CACHYOS_KEY" --keyserver keyserver.ubuntu.com && break
+            sleep 10
+          done
+          pacman-key --lsign-key "$CACHYOS_KEY"
+
+      - name: Build the ISO
+        env:
+          NOXIS_ALLOW_ROOT: '1'
+        run: |
+          tier="${{ github.event.inputs.tier }}"
+          tier="${tier:-base}"
+          echo "repository tier: $tier"
+          if [ "$tier" != "base" ]; then
+            ./noxis-linux/scripts/switch-repo-tier.sh "$tier"
+          fi
+
+          # The package list was already validated by the `verify` job.
+          # Capture the build output so a failure can be surfaced as annotations
+          # (annotations are readable through the API, artifact logs are not).
+          log=/tmp/noxis-build.log
+          set +e
+          ./noxis-linux/build.sh --clean --no-verify >"$log" 2>&1
+          rc=$?
+          set -e
+
+          echo "=== progress markers ==="
+          grep -E '^==>' "$log" | tail -25 || true
+
+          if [ "$rc" -ne 0 ]; then
+            # GitHub keeps only ~10 annotations per check run, so pack everything
+            # into a single multi-line one (%0A is the escape for a newline).
+            report="$(
+              {
+                echo "--- disk ---"; df -h / | tail -1
+                echo "--- failures ---"
+                grep -iE 'exists in filesystem|conflicting files|^error|failed|cannot|no space|invalid|not found' "$log" \
+                  | cut -c1-170 | tail -18
+                echo "--- tail ---"; tail -n 6 "$log" | cut -c1-170
+              } | sed 's/\r$//; s/%/%25/g' | awk '{printf "%s%%0A", $0}'
+            )"
+            echo "::error title=build.sh exited with $rc::$report"
+            exit "$rc"
+          fi
+
+          tail -n 20 "$log"
+          ls -lh noxis-linux/out/
+
+          iso=$(ls -1 noxis-linux/out/*.iso | head -n1)
+          printf '::notice title=ISO built::%s (%s)\n' "$(basename "$iso")" "$(du -h "$iso" | cut -f1)"
+
+      - name: Checksums and split (max 2 GiB per file)
+        run: |
+          set -euo pipefail
+          cd noxis-linux/out
+          iso=$(ls -1 *.iso | head -n1)
+          sha256sum "$iso" | tee "$iso.sha256"
+          mkdir -p parts && cd parts
+          split --bytes=1900M --numeric-suffixes=1 --suffix-length=2 "../$iso" "${iso}.part"
+          cp "../$iso.sha256" .
+          sha256sum ./*.iso.part* > SHA256SUMS
+          # prove that what we publish rebuilds the image byte for byte
+          joined=$(cat ./*.iso.part* | sha256sum | cut -d' ' -f1)
+          image=$(cut -d' ' -f1 "../$iso.sha256")
+          if [ "$joined" != "$image" ]; then
+            echo "::error title=Reassembly check failed::$iso does not rebuild from its own parts"
+            exit 1
+          fi
+          echo "::notice title=Reassembly check::$(ls -1 ./*.iso.part* | wc -l) part(s) rebuild $iso byte for byte"
+          ls -lh .
+
+      - name: Upload the ISO (split parts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: noxis-iso-${{ github.run_number }}
+          path: noxis-linux/out/parts/*
+          retention-days: 14
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------------
+  # Publishing runs on the *host* runner (not the Arch container) because it
+  # only needs gh, which is preinstalled there.
+  # -------------------------------------------------------------------------
+  release:
+    name: Publish the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the ISO parts
+        uses: actions/download-artifact@v4
+        with:
+          name: noxis-iso-${{ github.run_number }}
+          path: parts
+
+      - name: List what we got
+        run: ls -lh parts/
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # this job has no checkout, so tell gh which repository it works on
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          notes=$(cat <<'EOF'
+          NoxisOS Cachy Edition — a live/install ISO built on CachyOS/Arch with a Hyprland desktop.
+
+          ### Download every file below into one folder
+
+          GitHub rejects single files over 2 GiB, so the image is published as parts. Joining only one of them gives a truncated image — that is the classic "no bootable device" after writing the stick.
+
+          ```bash
+          # Linux / macOS — then verify
+          cat noxis-*.iso.part* > noxis.iso
+          sha256sum -c SHA256SUMS      # the parts, as downloaded
+          sha256sum noxis.iso          # must equal the hash inside noxis-*.iso.sha256
+
+          # Windows (cmd), with the exact file names shown below
+          copy /b noxis-<date>-x86_64.iso.part01+noxis-<date>-x86_64.iso.part02 noxis.iso
+          ```
+
+          The repository ships a helper that does the join and all the checks, and refuses to emit a truncated image:
+
+          ```bash
+          ./noxis-linux/scripts/assemble-iso.sh          # Linux / macOS
+          .\noxis-linux\scripts\assemble-iso.ps1         # Windows PowerShell
+          ```
+
+          ### Write it raw to the whole device
+
+          To the **device** (e.g. `/dev/sdX`, "Disk 1"), never to a partition and never as a file copy:
+
+          ```bash
+          sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync
+          sudo cmp -n $(stat -c%s noxis.iso) noxis.iso /dev/sdX && echo 'stick OK'
+          ```
+
+          On Windows use [Rufus](https://rufus.ie) in *DD image mode*, or balenaEtcher.
+
+          ### Booting
+
+          Both BIOS (syslinux) and UEFI (systemd-boot) are supported: default kernel `linux-cachyos`, an LTS fallback and a `nomodeset` safe-graphics entry. If the firmware says "no bootable device", check that the stick holds the full image (size and hash above), and disable Secure Boot — the shipped bootloader is not signed.
+          EOF
+          )
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes "$notes"          # keep the instructions current
+          else
+            gh release create "$tag" --title "NoxisOS $tag" --notes "$notes"
+          fi
+
+          mapfile -t files < <(find parts -type f | sort)
+          echo "uploading ${#files[@]} file(s)"
+          gh release upload "$tag" "${files[@]}" --clobber
+          gh release view "$tag" --json assets --jq '.assets[] | "asset: \(.name) \(.size) bytes"'

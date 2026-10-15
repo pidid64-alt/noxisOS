@@ -1,0 +1,20 @@
+#
+# The keyring lives on a tmpfs (see etc-pacman.d-gnupg.mount) so that the
+# squashfs never carries a stale keyring; populate it on every boot.
+#
+[Unit]
+Description=Initializes the pacman keyring
+ConditionPathExists=/etc/pacman.conf
+Requires=etc-pacman.d-gnupg.mount
+After=etc-pacman.d-gnupg.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/pacman-key --init
+ExecStart=/usr/bin/pacman-key --populate archlinux
+ExecStart=/bin/sh -c 'test -e /usr/share/pacman/keyrings/cachyos.gpg && { pacman-key --add /usr/share/pacman/keyrings/cachyos.gpg; pacman-key --lsign-key F3B607488DB35A47; } || true'
+ExecStart=/bin/sh -c 'pacman-key --populate cachyos || true'
+
+[Install]
+WantedBy=multi-user.target

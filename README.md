@@ -19,6 +19,19 @@ for bare-metal programming on x86.
 
 ---
 
+## 🐧 Two projects, one repository
+
+This repository contains **two independent things**:
+
+| | |
+|---|---|
+| **`noxis`** | the tiny 32-bit learning OS described below — boot sector, protected mode, its own kernel, no GRUB, no Linux |
+| **[`noxis-linux/`](noxis-linux/README.md)** | **NoxisOS Cachy Edition** — a real, bootable Linux distribution built on CachyOS/Arch with a Hyprland desktop and a Calamares installer. `cd noxis-linux && ./build.sh` (or run the *NoxisOS ISO* GitHub Action) |
+
+They share the name and the taste in colours, not a single line of code.
+
+---
+
 ## ✨ What's inside
 
 | Subsystem | Built in | What it does |

@@ -1,0 +1,21 @@
+# noxis-linux — notification daemon
+font=JetBrainsMono Nerd Font 11
+background-color=#0e0e18f2
+text-color=#e5e7eb
+border-color=#8b5cf6
+progress-color=over #22d3ee
+border-size=2
+border-radius=12
+padding=12
+margin=12
+width=380
+height=140
+max-visible=4
+anchor=top-right
+layer=overlay
+default-timeout=6000
+group-by=app-name
+icons=1
+icon-border-radius=6
+markup=1
+format=<b>%s</b>\n%b

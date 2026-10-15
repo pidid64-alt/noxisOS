@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# noxis-hardware — thin wrapper around CachyOS' chwd hardware detection
+# ---------------------------------------------------------------------------
+set -uo pipefail
+
+if ! command -v chwd >/dev/null; then
+    cat <<'TXT'
+chwd (CachyOS Hardware Detection) is not installed on this medium.
+The open-source Mesa/NVK drivers are already present; for NVIDIA proprietary
+drivers install them manually:
+
+  sudo pacman -S linux-cachyos-nvidia-open nvidia-utils nvidia-settings
+
+TXT
+    exit 0
+fi
+
+usage() {
+    cat <<'TXT'
+noxis-hardware — install the right driver set for this machine (chwd)
+
+  noxis-hardware --list     show available profiles
+  noxis-hardware --auto     detect and install the best matching profile
+  noxis-hardware -i <name>  install a specific profile
+
+TXT
+}
+
+case "${1:-}" in
+    --list|-l)   exec pkexec chwd --list ;;
+    --auto|-a)   exec pkexec chwd --autoconfigure ;;
+    -i|--install) shift; exec pkexec chwd -i "$@" ;;
+    ""|--help|-h) usage ;;
+    *) usage ;;
+esac

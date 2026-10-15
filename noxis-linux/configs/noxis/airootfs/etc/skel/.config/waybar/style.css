@@ -1,0 +1,124 @@
+/* noxis-linux — waybar theme (violet / cyan on glass) */
+* {
+    font-family: "JetBrainsMono Nerd Font", "Noto Sans", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+}
+
+window#waybar {
+    background: transparent;
+    color: #e5e7eb;
+}
+
+.modules-left, .modules-center, .modules-right {
+    background: rgba(14, 14, 24, 0.72);
+    border: 1px solid rgba(139, 92, 246, 0.28);
+    border-radius: 14px;
+    padding: 2px 6px;
+}
+
+#workspaces {
+    background: transparent;
+    margin: 0 4px;
+}
+
+#workspaces button {
+    padding: 0 8px;
+    margin: 4px 2px;
+    border-radius: 10px;
+    color: #a1a1aa;
+    background: transparent;
+    transition: all 0.25s ease;
+}
+
+#workspaces button:hover {
+    background: rgba(139, 92, 246, 0.25);
+    color: #ffffff;
+}
+
+#workspaces button.active {
+    background: linear-gradient(135deg, #8b5cf6 0%, #22d3ee 100%);
+    color: #0b0b12;
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.55);
+}
+
+#workspaces button.urgent {
+    background: #f43f5e;
+    color: #ffffff;
+}
+
+#window {
+    margin: 0 8px;
+    color: #c4b5fd;
+}
+
+#clock, #cpu, #memory, #temperature, #network, #bluetooth,
+#pulseaudio, #battery, #tray, #idle_inhibitor {
+    padding: 0 9px;
+    margin: 4px 1px;
+    border-radius: 10px;
+    background: transparent;
+}
+
+#clock {
+    color: #ffffff;
+    font-weight: 700;
+}
+
+#cpu        { color: #a5b4fc; }
+#memory     { color: #93c5fd; }
+#temperature{ color: #fcd34d; }
+#network    { color: #7dd3fc; }
+#bluetooth  { color: #60a5fa; }
+#pulseaudio { color: #c4b5fd; }
+#idle_inhibitor { color: #94a3b8; }
+
+#temperature.critical {
+    background: rgba(244, 63, 94, 0.85);
+    color: #ffffff;
+}
+
+#battery        { color: #86efac; }
+#battery.warning { color: #fbbf24; }
+#battery.critical {
+    color: #f43f5e;
+    animation: blink 1.2s steps(2, start) infinite;
+}
+
+#tray { margin-right: 4px; }
+
+#custom-clipboard, #custom-install, #custom-power {
+    padding: 0 10px;
+    margin: 4px 2px;
+    border-radius: 10px;
+}
+
+#custom-install {
+    color: #0b0b12;
+    background: linear-gradient(135deg, #8b5cf6 0%, #22d3ee 100%);
+}
+
+#custom-power {
+    color: #fda4af;
+    background: rgba(244, 63, 94, 0.16);
+}
+
+#custom-power:hover, #custom-install:hover {
+    background: rgba(139, 92, 246, 0.45);
+    color: #ffffff;
+}
+
+tooltip {
+    background: rgba(14, 14, 24, 0.95);
+    border: 1px solid rgba(139, 92, 246, 0.45);
+    border-radius: 10px;
+}
+
+tooltip label { color: #e5e7eb; }
+
+@keyframes blink {
+    to { color: #fee2e2; }
+}

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# noxis-run-as-root — run a graphical application as root inside a user's
+# Wayland session (used by pkexec for the installer / gparted).
+# pkexec strips XDG_RUNTIME_DIR and WAYLAND_DISPLAY, so we put them back.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+[[ $EUID -eq 0 ]] || { echo "noxis-run-as-root must be run through pkexec/sudo" >&2; exit 1; }
+[[ $# -ge 1 ]] || { echo "usage: noxis-run-as-root <command> [args...]" >&2; exit 1; }
+
+if [[ -z ${NOXIS_ROOT_ENV_SET:-} ]]; then
+    target_uid=$(id -u liveuser 2>/dev/null || echo 1000)
+    export XDG_RUNTIME_DIR="/run/user/${target_uid}"
+    if [[ -z ${WAYLAND_DISPLAY:-} ]]; then
+        wl=$(find "${XDG_RUNTIME_DIR}" -maxdepth 1 -name 'wayland-*' -printf '%f\n' 2>/dev/null | sort | head -n1)
+        export WAYLAND_DISPLAY="${wl:-wayland-1}"
+    fi
+    export XDG_SESSION_TYPE=wayland
+    export QT_QPA_PLATFORM=wayland
+    export GDK_BACKEND=wayland
+    export NOXIS_ROOT_ENV_SET=1
+fi
+
+# Wayland needs the compositor socket that pkexec stripped above.
+exec "$@"

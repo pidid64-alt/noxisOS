@@ -1,0 +1,4 @@
+NAME="NoxisOS Cachy Edition"
+VERSION="2026.10"
+BASE="CachyOS (Arch Linux) rolling"
+EDITION="Hyprland"
