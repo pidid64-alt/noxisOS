@@ -42,7 +42,7 @@ Work through these in order — the first one is by far the most common:
 
 | Check | What to look at |
 |-------|-----------------|
-| **Is the image complete?** | The release publishes an ISO as several `<2 GiB` parts. Joining only some of them (or letting a download finish halfway) gives a file Windows/Linux tools happily write — and it boots nothing. Expected total for `noxis-2026.10.15-x86_64.iso`: **3 652 321 280 bytes** (`part01` 1 992 294 400 + `part02` 1 660 026 880). The release page lists the exact sizes of every asset, and `SHA256SUMS` has the hashes of all parts. Run `noxis-linux/scripts/assemble-iso.sh` (or `assemble-iso.ps1`): it verifies every part against `SHA256SUMS` and the joined image against `noxis-*.iso.sha256` and refuses a truncated result |
+| **Is the image complete?** | The release publishes an ISO as several `<2 GiB` parts. Joining only some of them (or letting a download finish halfway) gives a file Windows/Linux tools happily write — and it boots nothing. Check the current release page's exact asset sizes and `SHA256SUMS`. Run `noxis-linux/scripts/assemble-iso.sh` (or `assemble-iso.ps1`): it verifies every part against `SHA256SUMS` and the joined image against `noxis-*.iso.sha256` and refuses a truncated result |
 | **How was the stick written?** | The ISO must be written **raw to the whole device**: `sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync`, Rufus in *DD image mode*, or balenaEtcher. Copying the ISO file onto a FAT stick, or writing to `/dev/sdX1` instead of `/dev/sdX`, produces exactly this message |
 | **Did the write land?** | `sudo cmp -n $(stat -c%s noxis.iso) noxis.iso /dev/sdX && echo 'stick OK'` — read back and compare, no guessing |
 | **Secure Boot** | The shipped `systemd-boot`/syslinux binaries are unsigned, so firmware with Secure Boot on may skip the stick entirely. Disable Secure Boot (BIOS → Security → Secure Boot → *Disabled*) or enroll the binaries |
@@ -96,6 +96,14 @@ screen. Recent examples that were fixed this way:
 
 The vocabulary the config may use: props are `match:class|title|initial_class|initial_title|float|tag|xwayland|fullscreen|pin|focus|group|modal|fullscreen_state_internal|fullscreen_state_client|workspace|content|xdg_tag|namespace`, every effect needs a value (`on`/`off` for switches, numbers for `size`/`opacity`, `fullscreen`/`focus`/`always`/`none` for `idle_inhibit`).
 
+## The desktop is not 1920×1080
+
+The current live and installed Hyprland configuration requests `1920x1080@60`.
+In QEMU/KVM, use Virtio video (`virtio-vga-gl`/Virtio GPU) with 3D acceleration;
+QXL or a basic VGA adapter may not advertise the mode. In virt-manager, set the
+video model to **Virtio**, display to **SPICE**, and enable 3D acceleration where
+available. Reboot the live session after changing the virtual video device.
+
 ## The live session does not appear
 
 | Symptom | Check |
@@ -108,12 +116,19 @@ The vocabulary the config may use: props are `match:class|title|initial_class|in
 
 ## Installing fails
 
+The live installer is available in the Wofi app launcher as **NoxisOS Installer**;
+press **Super+I** to launch it directly. If an older image has no menu item, run
+`noxis-install` from Kitty. The current launcher uses XWayland for the privileged
+Qt window and `pkexec` for authorization; inspect `/var/log/Calamares.log` if
+Calamares opens but installation fails.
+
 | Symptom | Cause / fix |
 |---------|-------------|
-| Calamares does not start | run `pkexec /usr/local/bin/noxis-run-as-root calamares -d` in a terminal and read the trace |
+| `noxis-install: command not found` | The image predates the installer launcher fix; boot the current ISO and choose **NoxisOS Installer** from the app menu or press **Super+I** |
+| Calamares says no display / window never appears | Log in to the graphical live session, not a TTY; the launcher enables root access to the local XWayland display and starts Calamares with the XCB Qt backend |
 | `unpackfs` fails on `airootfs.sfs` | the ISO was booted from something other than the medium (e.g. copied files). `/run/archiso/bootmnt` must point at the ISO |
 | “The installer needs at least X GiB” | `modules/welcome.conf` → `requirements.requiredStorage` |
-| Target does not boot (UEFI) | check that `/boot/efi` got the ESP; systemd-boot entries are written by the `bootloader` module — see `/var/log/Calamares.log` on the target |
+| Target does not boot after installation | Keep the ISO attached until Calamares reports success; use a writable virtual disk, then detach the ISO and put the disk first in boot order. The installer defaults to GRUB for legacy BIOS and UEFI; see `/var/log/Calamares.log` if the bootloader step failed |
 | No kernel modules after install | `mkinitcpio -P` ran with a broken preset — verify `initcpio.conf` still has `kernel: all` and that both kernels were unpacked |
 | Keyring errors on the first `pacman -Syu` | `noxis-finalize` only initialises keys when `trustdb.gpg` is missing; if the copy was incomplete run `sudo pacman-key --init && sudo pacman-key --populate archlinux cachyos` |
 

@@ -1,11 +1,14 @@
 [Desktop Entry]
 Type=Application
-Name=Install NoxisOS
-Name[ru]=Установить NoxisOS
-Comment=Install NoxisOS Cachy Edition to this computer
-Comment[ru]=Установить NoxisOS Cachy Edition на этот компьютер
-Exec=pkexec /usr/local/bin/noxis-run-as-root calamares -d
+Name=NoxisOS Installer
+Name[ru]=Установщик NoxisOS
+GenericName=Install NoxisOS Cachy Edition
+GenericName[ru]=Установить NoxisOS Cachy Edition
+Comment=Install NoxisOS to this computer
+Comment[ru]=Установить NoxisOS на компьютер
+Exec=/usr/local/bin/noxis-install
+TryExec=/usr/local/bin/noxis-install
 Icon=system-software-install
 Terminal=false
-Categories=System;
+Categories=System;Installer;
 StartupNotify=true

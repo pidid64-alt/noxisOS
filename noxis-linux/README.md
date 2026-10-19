@@ -120,14 +120,9 @@ sha256sum -c SHA256SUMS                  # the parts, as downloaded
 sha256sum noxis.iso                      # must equal the hash in noxis-*.iso.sha256
 ```
 
-| File | Size (bytes) | |
-|------|--------------|---|
-| `noxis-2026.10.15-x86_64.iso.part01` | 1 992 294 400 | 1,86 GiB |
-| `noxis-2026.10.15-x86_64.iso.part02` | 1 660 026 880 | 1,55 GiB |
-| joined `noxis-2026.10.15-x86_64.iso` | **3 652 321 280** | **3,40 GiB — this is the number to check** |
-
-Every release names its own files; compare what you downloaded with the asset
-list on the release page (and `SHA256SUMS` covers the parts byte for byte).
+Release filenames and sizes change with each build. Use the current release
+page's asset list, then run the helper below; it checks every downloaded part
+against `SHA256SUMS` and verifies the joined ISO against its published hash.
 
 ### Write the stick
 
@@ -155,13 +150,13 @@ UEFI through El Torito + an embedded EFI system partition, so it works both as
 a **CD/DVD image** and as a **disk image** — pick whichever is easier.
 
 ```bash
-# QEMU: as a CD
-qemu-system-x86_64 -enable-kvm -m 4096 -smp 4 -cdrom noxis.iso -boot d \
-  -device virtio-vga-gl -display gtk,gl=on
-# QEMU: as a disk (BIOS and UEFI with -bios .../OVMF_CODE.fd)
-qemu-system-x86_64 -enable-kvm -m 4096 -smp 4 -bios /usr/share/edk2/x64/OVMF.4m.fd \
+# Create a writable target disk, then boot the ISO from CD/DVD.
+qemu-img create -f qcow2 noxis.qcow2 30G
+qemu-system-x86_64 -enable-kvm -m 6144 -smp 4 -cdrom noxis.iso -boot order=d \
   -device virtio-vga-gl -display gtk,gl=on \
-  -drive file=noxis.iso,format=raw,if=virtio
+  -drive file=noxis.qcow2,format=qcow2,if=virtio
+# After Calamares says installation completed: power off, detach the ISO,
+# and start the same VM again with only noxis.qcow2 attached.
 ```
 
 | Hypervisor | What to do |
@@ -170,12 +165,14 @@ qemu-system-x86_64 -enable-kvm -m 4096 -smp 4 -bios /usr/share/edk2/x64/OVMF.4m.
 | **VMware Workstation/Fusion** | *VM settings → CD/DVD (SATA) → Use ISO image* → the file; *Options → Advanced → Firmware type: UEFI* for the UEFI path |
 | **Hyper-V** | Generation 2 (UEFI) works: *Settings → DVD Drive → Insert Disk* → `noxis.iso`. **Turn Secure Boot off** (*Security → Secure Boot → Disable*) — the shipped bootloader is unsigned, and this is the usual "no bootable device" in Hyper-V |
 | **virt-manager / Proxmox** | Add a CDROM device with the ISO, or import the ISO as a disk (`raw`); set the boot order to it |
+| **QEMU/KVM (recommended)** | Attach the ISO as a **CD-ROM** and create/attach a separate writable qcow2 disk (20 GiB minimum). Use a **Virtio** video device (3D acceleration enabled) and enable SPICE agent integration. The live session requests 1920×1080; the virtual video device must advertise that mode. |
 
 Checks when the firmware insists on "no bootable device":
 
-1. The file that you attached must be the **joined** image: `3 649 224 704` bytes for the 2026.10 release. Two `dd` calls onto the same output file silently overwrite each other — the second one starts at offset 0 again — which is exactly how a 3.4 GiB ISO turns into a 1.6 GiB one that boots nothing. Use `cat part01 part02 > noxis.iso` (or the `assemble-iso` helpers), never `dd of=<same file>` twice, and add `oflag=append conv=notrunc` if you really are appending to a device.
+1. The file that you attached must be the **joined** image. Check the exact byte size on the current release page and verify with `noxis-linux/scripts/assemble-iso.sh` (or `.ps1`). Two `dd` calls onto the same output file silently overwrite each other — the second one starts at offset 0 again — which is exactly how a 3.4 GiB ISO turns into a 1.6 GiB one that boots nothing. Use `cat part01 part02 > noxis.iso` (or the `assemble-iso` helpers), never `dd of=<same file>` twice, and add `oflag=append conv=notrunc` if you really are appending to a device.
 2. Attach it as **CD/DVD**, or as a disk with the right firmware. A UEFI machine booting nothing usually means the image went to an IDE port whose controller is not bootable.
 3. Try the other firmware mode (BIOS ↔ UEFI) and disable Secure Boot.
+4. If the message appears **after restarting an uninstalled live VM**, this is expected: the virtual hard disk is empty. Re-attach the ISO to boot live, then launch **NoxisOS Installer** from the app menu (or press **Super+I**) and install onto a separate virtual disk. Only detach the ISO after Calamares reports success.
 
 Hyprland needs 3D acceleration: `virtio-vga-gl`/`-display gl=on` in QEMU, VMSVGA + 3D in VirtualBox, *Accelerate 3D graphics* in VMware. Without it, boot the `safe graphics` entry and use the plain TTY.
 

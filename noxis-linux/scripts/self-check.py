@@ -141,6 +141,29 @@ def check_profiledef(profile: pathlib.Path, problems: list[str]) -> None:
             fail(problems, f"profiledef.sh: '{key}' is a script but file_permissions gives it mode {mode}")
 
 
+
+def check_live_installer_and_display(profile: pathlib.Path, problems: list[str]) -> None:
+    airootfs = profile / "airootfs"
+    desktop = airootfs / "usr/share/applications/noxis-install.desktop"
+    if not desktop.is_file():
+        fail(problems, "live installer has no application-menu entry at /usr/share/applications/noxis-install.desktop")
+    else:
+        content = desktop.read_text(errors="replace")
+        if "Exec=/usr/local/bin/noxis-install" not in content or "Terminal=false" not in content:
+            fail(problems, "NoxisOS installer desktop entry must launch noxis-install without a terminal")
+
+    hypr = airootfs / "etc/skel/.config/hypr/hyprland.conf"
+    if not hypr.is_file() or "monitor = , 1920x1080@60, auto, 1" not in hypr.read_text(errors="replace"):
+        fail(problems, "live and installed Hyprland config must request 1920x1080@60")
+
+    installer = airootfs / "usr/local/bin/noxis-install"
+    if installer.is_file() and "noxis-run-as-root --x11" not in installer.read_text(errors="replace"):
+        fail(problems, "noxis-install must launch the root Calamares GUI through XWayland")
+
+    bootloader = airootfs / "etc/calamares/modules/noxis-bootloader.conf"
+    if bootloader.is_file() and 'efiBootLoader: "grub"' not in bootloader.read_text(errors="replace"):
+        fail(problems, "Calamares must default to GRUB (supports legacy BIOS and UEFI)")
+
 def check_referenced_paths(profile: pathlib.Path, problems: list[str]) -> None:
     airootfs = profile / "airootfs"
     skel = airootfs / "etc" / "skel"
@@ -198,6 +221,7 @@ def main(argv: list[str]) -> int:
     problems: list[str] = []
     check_calamares(profile, problems)
     check_profiledef(profile, problems)
+    check_live_installer_and_display(profile, problems)
     check_referenced_paths(profile, problems)
     check_binaries(profile, problems)
 

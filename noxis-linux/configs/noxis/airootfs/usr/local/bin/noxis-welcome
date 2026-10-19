@@ -30,6 +30,7 @@ cat <<TXT
     Super + D ............ application launcher (wofi)
     Super + E ............ file manager (dolphin)
     Super + Q ............ close the focused window
+    Super + I ............ launch the graphical installer
     Super + 1..0 ......... switch workspace
     Super + M ............ session menu (wlogout)
     Super + Shift + S .... screenshot region -> clipboard

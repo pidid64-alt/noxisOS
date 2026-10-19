@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
-# ---------------------------------------------------------------------------
-# noxis-run-as-root — run a graphical application as root inside a user's
-# Wayland session (used by pkexec for the installer / gparted).
-# pkexec strips XDG_RUNTIME_DIR and WAYLAND_DISPLAY, so we put them back.
-# ---------------------------------------------------------------------------
+# Run a graphical installer as root while keeping only the local display vars
+# needed by XWayland. This path is used via pkexec/sudo from the live session.
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "noxis-run-as-root must be run through pkexec/sudo" >&2; exit 1; }
-[[ $# -ge 1 ]] || { echo "usage: noxis-run-as-root <command> [args...]" >&2; exit 1; }
+[[ $# -ge 1 ]] || { echo "usage: noxis-run-as-root [--x11 DISPLAY XAUTHORITY --] <command> [args...]" >&2; exit 1; }
 
-if [[ -z ${NOXIS_ROOT_ENV_SET:-} ]]; then
+if [[ $1 == --x11 ]]; then
+    [[ $# -ge 5 ]] || { echo "usage: noxis-run-as-root --x11 DISPLAY XAUTHORITY -- <command> [args...]" >&2; exit 2; }
+    export DISPLAY=$2
+    export XAUTHORITY=$3
+    shift 4
+    [[ $1 == -- ]] || { echo "expected -- before command" >&2; exit 2; }
+    shift
+    export QT_QPA_PLATFORM=xcb
+    export GDK_BACKEND=x11
+    export XDG_SESSION_TYPE=x11
+else
+    # Optional Wayland path for other trusted tools.
     target_uid=$(id -u liveuser 2>/dev/null || echo 1000)
     export XDG_RUNTIME_DIR="/run/user/${target_uid}"
     if [[ -z ${WAYLAND_DISPLAY:-} ]]; then
@@ -16,10 +24,7 @@ if [[ -z ${NOXIS_ROOT_ENV_SET:-} ]]; then
         export WAYLAND_DISPLAY="${wl:-wayland-1}"
     fi
     export XDG_SESSION_TYPE=wayland
-    export QT_QPA_PLATFORM=wayland
-    export GDK_BACKEND=wayland
-    export NOXIS_ROOT_ENV_SET=1
+    export QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-wayland}
+    export GDK_BACKEND=${GDK_BACKEND:-wayland}
 fi
-
-# Wayland needs the compositor socket that pkexec stripped above.
 exec "$@"

@@ -24,6 +24,7 @@ rm -f  /usr/local/bin/noxis-live-setup
 rm -f  /usr/local/bin/noxis-run-as-root
 rm -f  /usr/local/bin/noxis-install
 rm -f  /usr/share/applications/noxis-install.desktop
+update-desktop-database -q /usr/share/applications 2>/dev/null || true
 
 log "dropping passwordless live grants"
 rm -f  /etc/sudoers.d/10-liveuser
