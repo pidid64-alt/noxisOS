@@ -51,15 +51,16 @@ else
     (cd "$build_dir" && makepkg --noconfirm --cleanbuild --nodeps)
 fi
 
-pkg=$(find "$build_dir" -maxdepth 1 -type f -name 'noxis-calamares-*.pkg.tar.*' -print -quit)
+pkg=$(find "$build_dir" -maxdepth 1 -type f -name 'noxis-calamares-[0-9]*.pkg.tar.*' -print -quit)
 [[ -n $pkg ]] || { echo "build-calamares: makepkg produced no package" >&2; exit 1; }
 cp -f "$pkg" "$repo_dir/repo/"
 
 # Pin the exact Boost.Python soname used to compile this package.
 for package in boost boost-libs; do
-    version=$(pacman -Q "$package" --queryformat '%n-%v-%a.pkg.tar.zst')
-    cached="${repo_dir}/cache/${version}"
-    [[ -f $cached ]] || { echo "build-calamares: cached package missing: $cached" >&2; exit 1; }
+    version=$(pacman -Q "$package" | awk '{print $2}')
+    cached=$(find "$repo_dir/cache" -maxdepth 1 -type f \
+        -name "${package}-${version}-*.pkg.tar.*" -print -quit)
+    [[ -n $cached ]] || { echo "build-calamares: cached package missing for ${package} ${version}" >&2; exit 1; }
     cp -f "$cached" "$repo_dir/repo/"
 done
 
