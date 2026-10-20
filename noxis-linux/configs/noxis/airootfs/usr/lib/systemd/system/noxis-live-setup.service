@@ -1,0 +1,16 @@
+[Unit]
+Description=NoxisOS live medium setup (home directory, locales)
+DefaultDependencies=no
+After=systemd-sysusers.service systemd-tmpfiles-setup.service local-fs.target
+Before=systemd-user-sessions.service getty@tty1.service multi-user.target
+Wants=systemd-sysusers.service
+ConditionPathExists=/etc/noxis-release
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/noxis-live-setup
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

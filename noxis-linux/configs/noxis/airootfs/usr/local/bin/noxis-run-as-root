@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Run a graphical installer as root while keeping only the local display vars
+# needed by XWayland. This path is used via pkexec/sudo from the live session.
+set -euo pipefail
+[[ $EUID -eq 0 ]] || { echo "noxis-run-as-root must be run through pkexec/sudo" >&2; exit 1; }
+[[ $# -ge 1 ]] || { echo "usage: noxis-run-as-root [--x11 DISPLAY XAUTHORITY --] <command> [args...]" >&2; exit 1; }
+
+if [[ $1 == --x11 ]]; then
+    [[ $# -ge 5 ]] || { echo "usage: noxis-run-as-root --x11 DISPLAY XAUTHORITY -- <command> [args...]" >&2; exit 2; }
+    export DISPLAY="$2"
+    export XAUTHORITY="$3"
+    shift 3
+    [[ ${1:-} == -- ]] || { echo "expected -- before command" >&2; exit 2; }
+    shift
+    [[ $# -ge 1 ]] || { echo "missing command after --" >&2; exit 2; }
+    export QT_QPA_PLATFORM=xcb
+    export GDK_BACKEND=x11
+    export XDG_SESSION_TYPE=x11
+else
+    # Optional Wayland path for other trusted tools.
+    target_uid=$(id -u liveuser 2>/dev/null || echo 1000)
+    export XDG_RUNTIME_DIR="/run/user/${target_uid}"
+    if [[ -z ${WAYLAND_DISPLAY:-} ]]; then
+        wl=$(find "${XDG_RUNTIME_DIR}" -maxdepth 1 -name 'wayland-*' -printf '%f\n' 2>/dev/null | sort | head -n1)
+        export WAYLAND_DISPLAY="${wl:-wayland-1}"
+    fi
+    export XDG_SESSION_TYPE=wayland
+    export QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-wayland}
+    export GDK_BACKEND=${GDK_BACKEND:-wayland}
+fi
+exec "$@"

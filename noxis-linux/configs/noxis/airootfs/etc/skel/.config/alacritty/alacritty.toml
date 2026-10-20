@@ -1,0 +1,49 @@
+# noxis-linux — alacritty
+[window]
+opacity = 0.94
+padding = { x = 12, y = 12 }
+dynamic_title = true
+
+[font]
+size = 11.5
+normal = { family = "JetBrainsMono Nerd Font", style = "Regular" }
+bold = { family = "JetBrainsMono Nerd Font", style = "Bold" }
+italic = { family = "JetBrainsMono Nerd Font", style = "Italic" }
+
+[scrolling]
+history = 20000
+
+[cursor]
+style = { shape = "Block", blinking = "On" }
+
+[colors.primary]
+background = "#0e0e18"
+foreground = "#e5e7eb"
+
+[colors.cursor]
+text = "#0b0b12"
+cursor = "#22d3ee"
+
+[colors.selection]
+text = "#0b0b12"
+background = "#8b5cf6"
+
+[colors.normal]
+black = "#1b1b25"
+red = "#f43f5e"
+green = "#34d399"
+yellow = "#fbbf24"
+blue = "#8b5cf6"
+magenta = "#c084fc"
+cyan = "#22d3ee"
+white = "#e5e7eb"
+
+[colors.bright]
+black = "#52525b"
+red = "#fb7185"
+green = "#6ee7b7"
+yellow = "#fcd34d"
+blue = "#a78bfa"
+magenta = "#d8b4fe"
+cyan = "#67e8f9"
+white = "#ffffff"

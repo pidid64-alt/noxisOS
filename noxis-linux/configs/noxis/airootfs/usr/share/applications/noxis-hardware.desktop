@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Hardware & Drivers
+Name[ru]=Железо и драйверы
+Comment=Detect hardware and install the matching driver profile (chwd)
+Comment[ru]=Определить оборудование и установить подходящий профиль драйверов (chwd)
+Exec=kitty --class noxis-hardware -e /usr/local/bin/noxis-hardware
+Icon=preferences-system
+Terminal=false
+Categories=System;Settings;
+StartupNotify=true

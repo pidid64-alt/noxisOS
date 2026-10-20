@@ -1,0 +1,13 @@
+# noxis-linux — wofi launcher
+show=drun
+width=620
+height=460
+prompt=Search…
+insensitive
+allow_images=true
+image_size=28
+terminal=kitty
+run_always_keep_launcher_apps=false
+hide_scroll=true
+matching=fuzzy
+sort_order=default

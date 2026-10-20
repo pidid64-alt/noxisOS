@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=NoxisOS Installer
+Name[ru]=Установщик NoxisOS
+GenericName=Install NoxisOS Cachy Edition
+GenericName[ru]=Установить NoxisOS Cachy Edition
+Comment=Install NoxisOS to this computer
+Comment[ru]=Установить NoxisOS на компьютер
+Exec=/usr/local/bin/noxis-install
+TryExec=/usr/local/bin/noxis-install
+Icon=system-software-install
+Terminal=false
+Categories=System;Installer;
+StartupNotify=true

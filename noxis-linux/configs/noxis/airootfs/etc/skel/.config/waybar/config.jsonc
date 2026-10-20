@@ -1,0 +1,148 @@
+// noxis-linux — waybar
+{
+    "layer": "top",
+    "position": "top",
+    "height": 34,
+    "spacing": 6,
+    "margin-top": 8,
+    "margin-left": 12,
+    "margin-right": 12,
+
+    "modules-left":   ["hyprland/workspaces", "hyprland/submap", "hyprland/window"],
+    "modules-center": ["clock"],
+    "modules-right":  ["idle_inhibitor", "cpu", "memory", "temperature", "network", "bluetooth", "pulseaudio", "battery", "custom/clipboard", "custom/install", "tray", "custom/power"],
+
+    "hyprland/workspaces": {
+        "format": "{icon}",
+        "on-click": "activate",
+        "all-outputs": true,
+        "format-icons": {
+            "1": "1", "2": "2", "3": "3", "4": "4", "5": "5",
+            "6": "6", "7": "7", "8": "8", "9": "9", "10": "10",
+            "urgent": "",
+            "active": "",
+            "default": ""
+        }
+    },
+
+    "hyprland/submap": {
+        "format": " {}",
+        "tooltip": false
+    },
+
+    "hyprland/window": {
+        "format": "{}",
+        "max-length": 60,
+        "separate-outputs": true,
+        "rewrite": {
+            "^(.*) — Mozilla Firefox$": "$1",
+            "(.*) - Chromium$": "$1"
+        }
+    },
+
+    "clock": {
+        "format": " {:%H:%M}  {:%a %d %b}",
+        "format-alt": " {:%Y-%m-%d}",
+        "tooltip-format": "<span size='larger'>{:%B %Y}</span>\n<tt>{calendar}</tt>",
+        "calendar": {
+            "mode": "month",
+            "format": {
+                "today": "<span color='#8b5cf6'><b>{}</b></span>",
+                "days": "<span color='#e5e7eb'>{}</span>",
+                "weekdays": "<span color='#22d3ee'><b>{}</b></span>"
+            }
+        }
+    },
+
+    "cpu": {
+        "interval": 5,
+        "format": " {usage}%",
+        "tooltip-format": "CPU load: {load}\nFrequency: {avg_frequency} GHz",
+        "on-click": "kitty -e btop"
+    },
+
+    "memory": {
+        "interval": 5,
+        "format": " {percentage}%",
+        "tooltip-format": "RAM: {used:0.1f} GiB / {total:0.1f} GiB\nSwap: {swapUsed:0.1f} GiB / {swapTotal:0.1f} GiB",
+        "on-click": "kitty -e btop"
+    },
+
+    "temperature": {
+        "interval": 10,
+        "thermal-zone": 0,
+        "hwmon-path-abs": "",
+        "critical-threshold": 85,
+        "format": "{icon} {temperatureC}°C",
+        "format-icons": ["", "", ""]
+    },
+
+    "network": {
+        "interval": 3,
+        "format-wifi": " {essid}",
+        "format-ethernet": " {ifname}",
+        "format-linked": " {ifname} (no IP)",
+        "format-disconnected": " offline",
+        "tooltip-format": "{ifname}\n{ipaddr}/{cidr}\n{essid}\n{signalStrength}%",
+        "on-click": "nm-connection-editor"
+    },
+
+    "bluetooth": {
+        "format": " {status}",
+        "format-disabled": " ",
+        "format-connected": " {device_alias}",
+        "tooltip-format": "{controller_alias}\t{controller_address}",
+        "tooltip-format-connected": "{controller_alias}\t{controller_address}\n\n{device_enumerate}",
+        "on-click": "blueman-manager",
+        "on-click-right": "bluetoothctl power off"
+    },
+
+    "pulseaudio": {
+        "format": "{icon} {volume}%",
+        "format-muted": " muted",
+        "format-icons": { "headphone": "", "default": ["", "", ""] },
+        "scroll-step": 5,
+        "on-click": "pavucontrol",
+        "on-click-right": "pamixer -t",
+        "tooltip-format": "{desc}"
+    },
+
+    "battery": {
+        "interval": 30,
+        "states": { "warning": 30, "critical": 15 },
+        "format": "{icon} {capacity}%",
+        "format-charging": " {capacity}%",
+        "format-plugged": " {capacity}%",
+        "format-icons": ["", "", "", "", ""],
+        "tooltip-format": "{timeTo} ({capacity}%)"
+    },
+
+    "idle_inhibitor": {
+        "format": "{icon}",
+        "format-icons": { "activated": "", "deactivated": "" }
+    },
+
+    "tray": {
+        "icon-size": 18,
+        "spacing": 10
+    },
+
+    "custom/clipboard": {
+        "format": "",
+        "tooltip": "clipboard history",
+        "on-click": "sh -c 'cliphist list | wofi --dmenu | cliphist decode | wl-copy'"
+    },
+
+    "custom/install": {
+        "format": " Install",
+        "tooltip": "Install NoxisOS to this computer (Calamares)",
+        "on-click": "noxis-install",
+        "interval": "once"
+    },
+
+    "custom/power": {
+        "format": "⏻",
+        "tooltip": "session menu",
+        "on-click": "wlogout -b 4 -c 8 -r 8 -p layer-shell"
+    }
+}

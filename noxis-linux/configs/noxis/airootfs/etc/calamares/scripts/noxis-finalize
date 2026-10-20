@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# ===========================================================================
+#  noxis-finalize — the last job before the target is unmounted
+# ===========================================================================
+set -uo pipefail
+log() { printf '[noxis-finalize] %s\n' "$*"; }
+
+# --- pacman keyring ---------------------------------------------------------
+if [[ ! -s /etc/pacman.d/gnupg/trustdb.gpg ]]; then
+    log "initialising the pacman keyring in the target"
+    pacman-key --init                || log "warning: pacman-key --init failed"
+    pacman-key --populate archlinux  || log "warning: could not populate archlinux keys"
+    if [[ -e /usr/share/pacman/keyrings/cachyos.gpg ]]; then
+        pacman-key --add /usr/share/pacman/keyrings/cachyos.gpg      || true
+        pacman-key --lsign-key F3B607488DB35A47                      || true
+        pacman-key --populate cachyos                                || true
+    fi
+fi
+
+# --- services ---------------------------------------------------------------
+log "enabling the desktop session and system services"
+systemctl enable sddm.service >/dev/null 2>&1                || log "warning: could not enable sddm"
+systemctl enable NetworkManager.service >/dev/null 2>&1      || true
+systemctl enable bluetooth.service >/dev/null 2>&1           || true
+systemctl enable cups.socket >/dev/null 2>&1                 || true
+systemctl enable fstrim.timer >/dev/null 2>&1                || true
+systemctl enable systemd-timesyncd.service >/dev/null 2>&1   || true
+systemctl enable power-profiles-daemon.service >/dev/null 2>&1 || true
+systemctl disable dhcpcd.service >/dev/null 2>&1             || true
+systemctl disable systemd-networkd.service >/dev/null 2>&1   || true
+
+# --- CachyOS repository tier -------------------------------------------------
+# Offline installs cannot reinstall packages, so only the configuration is
+# switched here; the first `pacman -Syu` pulls the optimized builds.
+if [[ -x /usr/local/bin/noxis-repo-tier ]]; then
+    log "selecting the best CachyOS repository tier for this CPU"
+    /usr/local/bin/noxis-repo-tier --auto --no-reinstall --quiet || true
+fi
+
+# --- branding ----------------------------------------------------------------
+log "writing the installed-system welcome"
+cat > /etc/motd <<'MOTD'
+  Welcome to NoxisOS Cachy Edition.
+
+    noxis-welcome     tour, tips and keybindings
+    noxis-repo-tier   switch to the x86-64-v3/v4 optimized packages
+    sudo pacman -Syu  update the system (rolling release)
+    paru -S <pkg>     install from the AUR
+MOTD
+
+# --- drop the installer from the installed system ---------------------------
+log "removing the installer from the target"
+rm -rf /etc/calamares
+
+log "finalize done — the system is ready to boot"

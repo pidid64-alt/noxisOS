@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Start the live installer from the Wayland desktop. Calamares needs root,
+# but Qt running as root on Wayland is fragile; use the XWayland bridge, which
+# is explicitly ACLed for root by the live Hyprland session.
+set -uo pipefail
+
+if [[ ${1:-} == "--tui" ]]; then
+    exec kitty -e archinstall
+fi
+
+if ! command -v calamares >/dev/null 2>&1; then
+    echo "Calamares is not installed in this live image." >&2
+    echo "Run: pacman -Q noxis-calamares" >&2
+    if command -v kitty >/dev/null 2>&1 && command -v archinstall >/dev/null 2>&1; then
+        exec kitty -e archinstall
+    fi
+    exit 127
+fi
+
+if [[ -z ${DISPLAY:-} ]]; then
+    echo "No XWayland display is available; log in to the NoxisOS desktop first." >&2
+    exit 1
+fi
+
+# The live session allows the local root user to connect to its XWayland
+# server (see the session's xhost command). Do not grant network access.
+xhost +si:localuser:root >/dev/null 2>&1 || {
+    echo "Could not grant root access to the local XWayland display." >&2
+    exit 1
+}
+
+runner=(/usr/local/bin/noxis-run-as-root --x11 "$DISPLAY" "${XAUTHORITY:-}" -- calamares -d)
+if command -v pkexec >/dev/null 2>&1; then
+    exec pkexec "${runner[@]}"
+fi
+if command -v sudo >/dev/null 2>&1; then
+    exec sudo "${runner[@]}"
+fi
+echo "Neither pkexec nor sudo is available to start Calamares." >&2
+exit 127

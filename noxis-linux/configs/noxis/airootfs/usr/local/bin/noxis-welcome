@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# noxis-welcome — a friendly first look at NoxisOS Cachy Edition
+# ---------------------------------------------------------------------------
+set -uo pipefail
+
+short=0
+[[ ${1:-} == "--short" || ${1:-} == "-s" ]] && short=1
+
+installer_line="    (no installer on this medium)"
+if command -v calamares >/dev/null; then
+    installer_line="    noxis-install ........ graphical installer (Calamares)"
+fi
+export installer_line
+
+if command -v fastfetch >/dev/null; then
+    fastfetch --config /etc/fastfetch/config.jsonc 2>/dev/null || fastfetch
+fi
+
+(( short )) && exit 0
+
+cat <<TXT
+
+  Welcome to NoxisOS Cachy Edition — an Arch/CachyOS rolling release
+  with an optimized kernel, the CachyOS repositories and a Hyprland
+  desktop tuned by this project.
+
+  Getting around
+    Super + Return ....... terminal (kitty)
+    Super + D ............ application launcher (wofi)
+    Super + E ............ file manager (dolphin)
+    Super + Q ............ close the focused window
+    Super + I ............ launch the graphical installer
+    Super + 1..0 ......... switch workspace
+    Super + M ............ session menu (wlogout)
+    Super + Shift + S .... screenshot region -> clipboard
+    Super + W ............ show this screen again
+
+  Things to try
+${installer_line}
+    noxis-hardware ....... detect hardware, install drivers (chwd)
+    noxis-repo-tier ...... switch to x86-64-v3/v4 optimized packages
+    sudo pacman -Syu ..... update everything (rolling release!)
+    paru -S <package> .... build from the AUR
+
+  Help & links
+    github.com/pidid64-alt/noxisOS ...... this project
+    wiki.cachyos.org .................... CachyOS docs (applies here)
+    wiki.archlinux.org .................. Arch Linux wiki
+
+TXT

@@ -1,0 +1,44 @@
+# ===========================================================================
+#  NoxisOS Cachy Edition — Calamares branding
+# ===========================================================================
+---
+componentName:  noxis
+
+welcomeStyleCalamares:   false
+welcomeExpandingLogo:    true
+
+windowExpanding:    normal
+windowSize:         1100px, 580px
+windowPlacement:    center
+
+sidebar:        widget
+navigation:     widget
+
+strings:
+    productName:         NoxisOS
+    shortProductName:    NoxisOS
+    version:             2026.10
+    shortVersion:        2026.10
+    versionedName:       NoxisOS Cachy Edition 2026.10
+    shortVersionedName:  NoxisOS 2026.10
+    bootloaderEntryName: NoxisOS
+    productUrl:          https://github.com/pidid64-alt/noxisOS
+    supportUrl:          https://github.com/pidid64-alt/noxisOS/issues
+    knownIssuesUrl:      https://github.com/pidid64-alt/noxisOS/issues
+    releaseNotesUrl:     https://github.com/pidid64-alt/noxisOS/releases
+
+images:
+    productLogo:      "logo.png"
+    productIcon:      "icon.png"
+    productWelcome:   "welcome.png"
+    productWallpaper: "productWallpaper.png"
+
+style:
+   SidebarBackground:        "#14141f"
+   SidebarText:              "#e5e7eb"
+   SidebarTextCurrent:       "#0b0b12"
+   SidebarBackgroundCurrent: "#8b5cf6"
+
+# Simple image slideshow during installation (no QML needed).
+slideshow: [ "slide1.png", "slide2.png", "slide3.png" ]
+slideshowAPI: 2

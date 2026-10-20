@@ -1,0 +1,2 @@
+# CachyOS, x86-64v4 packages mirrors
+Server = https://mirror.cachyos.org/repo/$arch/$repo

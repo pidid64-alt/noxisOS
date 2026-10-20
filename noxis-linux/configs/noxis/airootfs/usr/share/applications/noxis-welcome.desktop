@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=NoxisOS Welcome
+Name[ru]=Добро пожаловать в NoxisOS
+Comment=Quick tour and tips for NoxisOS Cachy Edition
+Comment[ru]=Краткий обзор и подсказки по NoxisOS Cachy Edition
+Exec=kitty --class noxis-welcome -e /usr/local/bin/noxis-welcome
+Icon=dialog-information
+Terminal=false
+Categories=System;Documentation;
+StartupNotify=true
