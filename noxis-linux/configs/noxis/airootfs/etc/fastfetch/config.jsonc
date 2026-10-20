@@ -8,7 +8,7 @@
     "display": {
         "separator": "  ",
         "color": { "keys": "38;2;139;92;246" },
-        "keyWidth": 12
+        "key": { "width": 12 }
     },
     "modules": [
         "title",

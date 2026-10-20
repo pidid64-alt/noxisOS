@@ -17,6 +17,7 @@ Exit status: 0 = clean, 1 = problems found, 2 = could not run.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import pathlib
@@ -102,8 +103,22 @@ def check_calamares(root: pathlib.Path, problems: list[str]) -> None:
                     fail(problems, f"settings.conf: no configuration for module '{name}'")
 
     branding = settings.get("branding")
-    if branding and not (cal / "branding" / branding / "branding.desc").is_file():
-        fail(problems, f"settings.conf: branding '{branding}' has no branding.desc")
+    if branding:
+        brand_dir = cal / "branding" / branding
+        branding_desc = brand_dir / "branding.desc"
+        if not branding_desc.is_file():
+            fail(problems, f"settings.conf: branding '{branding}' has no branding.desc")
+        else:
+            try:
+                desc = next(yaml.safe_load_all(branding_desc.read_text()))
+                for name, image in desc.get("images", {}).items():
+                    if not (brand_dir / image).is_file():
+                        fail(problems, f"branding.desc: image '{name}' points to missing file '{image}'")
+                for image in desc.get("slideshow", []):
+                    if not (brand_dir / image).is_file():
+                        fail(problems, f"branding.desc: slideshow image '{image}' is missing")
+            except Exception as exc:  # noqa: BLE001 - report invalid branding schema
+                fail(problems, f"invalid branding.desc: {exc}")
 
 
 def check_profiledef(profile: pathlib.Path, problems: list[str]) -> None:
@@ -165,6 +180,21 @@ def check_live_installer_and_display(profile: pathlib.Path, problems: list[str])
         content = waybar.read_text(errors="replace")
         if '"on-click": "noxis-install"' not in content or "pkexec /usr/local/bin/noxis-run-as-root" in content:
             fail(problems, "Waybar's installer button must call noxis-install, not bypass its XWayland setup")
+
+    for config in (
+        airootfs / "etc/fastfetch/config.jsonc",
+        airootfs / "etc/skel/.config/fastfetch/config.jsonc",
+    ):
+        if not config.is_file():
+            fail(problems, f"Fastfetch config is missing: {config.relative_to(airootfs)}")
+            continue
+        try:
+            data = json.loads(config.read_text())
+            display = data.get("display", {})
+            if "keyWidth" in display or not isinstance(display.get("key"), dict):
+                fail(problems, f"{config.relative_to(airootfs)}: Fastfetch expects display.key.width, not display.keyWidth")
+        except Exception as exc:  # noqa: BLE001 - report JSON config errors
+            fail(problems, f"invalid Fastfetch JSON: {config.relative_to(airootfs)}: {exc}")
 
     bootloader = airootfs / "etc/calamares/modules/noxis-bootloader.conf"
     if bootloader.is_file() and 'efiBootLoader: "grub"' not in bootloader.read_text(errors="replace"):

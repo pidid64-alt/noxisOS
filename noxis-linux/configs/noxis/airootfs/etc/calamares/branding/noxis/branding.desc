@@ -31,7 +31,7 @@ images:
     productLogo:      "logo.png"
     productIcon:      "icon.png"
     productWelcome:   "welcome.png"
-    productWallpaper: "wallpaper.png"
+    productWallpaper: "productWallpaper.png"
 
 style:
    SidebarBackground:        "#14141f"
