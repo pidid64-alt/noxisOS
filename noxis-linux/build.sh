@@ -25,7 +25,9 @@ verify=1
 tier=""
 deps_only=0
 
-deps=(archiso git sudo squashfs-tools dosfstools mtools libisoburn syslinux grub edk2-shell zstd)
+deps=(archiso git sudo squashfs-tools dosfstools mtools libisoburn syslinux grub edk2-shell zstd \
+      base-devel boost boost-libs cmake doxygen extra-cmake-modules ninja pacman-contrib \
+      python-jsonschema python-pyaml python-unidecode qt6-tools)
 
 usage() { sed -n '2,14p' "$0"; }
 
@@ -79,6 +81,16 @@ if [[ -n $tier ]]; then
 fi
 
 (( clean )) && { echo "==> removing ${work_dir}"; rm -rf -- "$work_dir"; }
+
+# Build Calamares from the CachyOS source against the exact current Boost ABI.
+# The prebuilt CachyOS package can lag a Boost SONAME bump and then fails before
+# its window appears. The helper also creates a temporary profile with a local
+# package repository placed ahead of the rolling repositories.
+profile_copy=$(mktemp -d "${TMPDIR:-/tmp}/noxis-profile.XXXXXX")
+trap 'rm -rf -- "$profile_copy"' EXIT
+local_pkg_repo="${work_dir}/noxis-calamares-repo"
+"${script_dir}/scripts/build-calamares.sh" "$local_pkg_repo" "$profile_copy"
+profile="$profile_copy"
 
 if (( verify )); then
     echo "==> running the profile self-check"

@@ -125,6 +125,7 @@ Calamares opens but installation fails.
 | Symptom | Cause / fix |
 |---------|-------------|
 | `noxis-install: command not found` | The image predates the installer launcher fix; boot the current ISO and choose **NoxisOS Installer** from the app menu or press **Super+I** |
+| `libboost_python…so…: cannot open shared object file` | The old prebuilt Calamares was linked against a Boost SONAME no longer shipped by the rolling repo. Do not republish that binary; use the next ISO after the local Calamares rebuild + `ldd` CI check passes |
 | Calamares says no display / window never appears | Log in to the graphical live session, not a TTY; the launcher enables root access to the local XWayland display and starts Calamares with the XCB Qt backend |
 | `unpackfs` fails on `airootfs.sfs` | the ISO was booted from something other than the medium (e.g. copied files). `/run/archiso/bootmnt` must point at the ISO |
 | “The installer needs at least X GiB” | `modules/welcome.conf` → `requirements.requiredStorage` |

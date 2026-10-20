@@ -52,7 +52,7 @@ jobs:
     container:
       image: archlinux:latest
       options: --privileged
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -70,15 +70,22 @@ jobs:
           done
           pacman-key --lsign-key "$CACHYOS_KEY"
 
-      - name: Check that every package resolves
-        run: ./noxis-linux/scripts/check-packages.sh "$PROFILE"
-
       - name: Profile self-check (paths, configs, cross-references)
         run: python3 noxis-linux/scripts/self-check.py "$PROFILE"
 
+      - name: Build Calamares against the image's Boost ABI
+        run: |
+          repo="$RUNNER_TEMP/noxis-calamares-repo"
+          profile="$RUNNER_TEMP/noxis-profile"
+          ./noxis-linux/scripts/build-calamares.sh "$repo" "$profile"
+          echo "PROFILE=$profile" >> "$GITHUB_ENV"
+
+      - name: Check that every package resolves
+        run: ./noxis-linux/scripts/check-packages.sh "$PROFILE"
+
       - name: Check Calamares runtime libraries
         run: |
-          pacman --config "$PROFILE/pacman.conf" -Sy --needed --noconfirm cachyos-calamares-next boost boost-libs
+          pacman --config "$PROFILE/pacman.conf" -Sy --needed --noconfirm noxis-calamares
           ldd /usr/bin/calamares | tee /tmp/calamares-ldd.txt
           missing=$(grep 'not found' /tmp/calamares-ldd.txt || true)
           if [[ -n $missing ]]; then
@@ -137,7 +144,9 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed \
             archiso git sudo squashfs-tools dosfstools mtools libisoburn \
-            syslinux grub edk2-shell zstd which python python-yaml
+            syslinux grub edk2-shell zstd which python python-yaml \
+            base-devel boost boost-libs cmake doxygen extra-cmake-modules ninja \
+            pacman-contrib python-jsonschema python-pyaml python-unidecode qt6-tools
 
       - name: Trust the CachyOS repositories
         run: |

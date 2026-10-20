@@ -54,9 +54,11 @@ differences are deliberate and are listed below.
 * **Passwordless privileges.** `sudoers.d/10-liveuser` and
   `polkit-1/rules.d/49-nopasswd_global.rules` grant `wheel` everything without a
   password, so the installer, gparted and NetworkManager just work.
-* **Installer access.** `noxis-install.desktop` runs
-  `pkexec /usr/local/bin/noxis-run-as-root calamares -d`, which re-creates the
-  `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR` environment that pkexec strips.
+* **Installer access.** The menu and Waybar button call `noxis-install`, which
+  launches Calamares through XWayland with a narrowly restored `DISPLAY` and
+  `XAUTHORITY`. The package is rebuilt from CachyOS source for each ISO against
+  the same current Boost libraries as the image; the prebuilt rolling package
+  lagged a Boost SONAME bump and could not start.
 * **Repositories.** `etc/pacman.conf` carries `#<noxis-tier-v3|v4|znver4>`
   blocks; `noxis-repo-tier` toggles them and reinstalls packages on request.
 * **Branding files owned by packages.** `/usr/lib/os-release` (package
@@ -74,7 +76,7 @@ differences are deliberate and are listed below.
 Calamares runs the `noxis` branding and this sequence (see `etc/calamares/settings.conf`).
 
 > **Why every config is called `noxis-<module>.conf`:** archiso copies `airootfs/`
-> into the build root *before* it installs packages, and the `cachyos-calamares-next`
+> into the build root *before* it installs packages, and the locally rebuilt `noxis-calamares`
 > package owns the stock `/etc/calamares/modules/<module>.conf` files. Shipping a
 > file with the same name aborts the build with `exists in filesystem`. The
 > overrides are therefore bound to their modules through `instances:` in
@@ -87,7 +89,7 @@ Calamares runs the `noxis` branding and this sequence (see `etc/calamares/settin
 | show | welcome → locale → keyboard → partition → users → summary | no netinstall page: the ISO is self-contained |
 | exec | partition, mount, **unpackfs**, machineid, fstab, locale, keyboard, localecfg, removeuser, users, networkcfg, displaymanager, hwclock | `unpackfs` unsquashes `airootfs.sfs` onto the target |
 | exec | `shellprocess@prepare` | `/etc/calamares/scripts/noxis-prepare` (see below) |
-| exec | initcpiocfg, initcpio, bootloader, grubcfg, services-systemd | mkinitcpio rebuilds a normal initramfs for both kernels; systemd-boot (UEFI) or GRUB is installed |
+| exec | initcpiocfg, initcpio, bootloader, grubcfg, services-systemd | mkinitcpio rebuilds a normal initramfs for both kernels; GRUB is installed for BIOS or UEFI |
 | exec | `shellprocess@finalize`, preservefiles, umount | `/etc/calamares/scripts/noxis-finalize` |
 | show | finished | reboot |
 

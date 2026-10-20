@@ -7,7 +7,7 @@ CachyOS, EndeavourOS, …) or inside the `archlinux:latest` container used by CI
 
 | Kind | What |
 |------|------|
-| Packages | `archiso git squashfs-tools dosfstools mtools libisoburn syslinux grub edk2-shell zstd` |
+| Packages | `archiso git squashfs-tools dosfstools mtools libisoburn syslinux grub edk2-shell zstd base-devel boost boost-libs cmake doxygen extra-cmake-modules ninja pacman-contrib python-jsonschema python-pyaml python-unidecode qt6-tools` |
 | Disk | ~12 GiB free in `noxis-linux/` (work directory + ISO + package cache) |
 | Network | needed **while building** (packages are downloaded); *not* needed at install time |
 | Keys | `archlinux-keyring` plus the CachyOS key `F3B607488DB35A47` |
@@ -34,18 +34,22 @@ cd noxis-linux
 
 What happens under the hood:
 
-1. `scripts/check-packages.sh` resolves every entry of `packages.x86_64` against
-   the repositories in `configs/noxis/pacman.conf` (fast failure beats a 40
-   minute build that dies at 90%).
-2. `mkarchiso -v -w work -o out configs/noxis` boots the profile:
+1. `scripts/build-calamares.sh` rebuilds our Calamares package from CachyOS
+   source against the current Boost/Python ABI, caches the exact `boost` and
+   `boost-libs` packages in a local pacman repo, and prepares a temporary profile
+   that prefers this repo. This prevents the known stale prebuilt Calamares
+   binary from asking for an absent `libboost_python` SONAME.
+2. `scripts/check-packages.sh` resolves every entry of `packages.x86_64` against
+   the local repository and the repositories in `configs/noxis/pacman.conf`.
+3. `mkarchiso -v -w work -o out <temporary-profile>` boots the profile:
    it installs `bootstrap_packages.x86_64`, then `packages.x86_64` into
    `work/x86_64/airootfs`, copies the profile's `airootfs/` over the result,
    runs the mkinitcpio preset, builds the squashfs, prepares the syslinux and
    systemd-boot tree and finally calls `xorriso`.
-3. The result is `out/noxis-<date>-x86_64.iso` (hybrid: BIOS + UEFI, bootable
+4. The result is `out/noxis-<date>-x86_64.iso` (hybrid: BIOS + UEFI, bootable
    from USB via `dd`).
 
-Typical timings on 4 vCPU CI: 25–45 minutes, ~3 GiB ISO, ~11 GiB peak disk.
+Typical timings on 4 vCPU CI: 35–60 minutes (including the Calamares rebuild), ~3.5 GiB ISO, ~11 GiB peak disk.
 
 ## 3. Testing
 

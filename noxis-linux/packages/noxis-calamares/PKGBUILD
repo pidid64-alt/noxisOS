@@ -1,0 +1,74 @@
+# Rebuild Calamares against the same rolling Boost ABI shipped in the ISO.
+# CachyOS's prebuilt cachyos-calamares-next can lag behind boost-libs and
+# require an obsolete libboost_python soname, which prevents the installer
+# executable from starting at all.
+pkgname=noxis-calamares
+pkgver=3.4.2
+pkgrel=1
+pkgdesc='Calamares installer rebuilt for the NoxisOS CachyOS image'
+arch=('x86_64')
+url='https://github.com/CachyOS/cachyos-calamares'
+license=('GPL-3.0-or-later')
+provides=('calamares')
+conflicts=('calamares' 'cachyos-calamares' 'cachyos-calamares-next')
+replaces=('cachyos-calamares' 'cachyos-calamares-next')
+depends=(
+  boost-libs ckbcomp cryptsetup dmidecode gptfdisk hwinfo
+  kconfig kcoreaddons kcrash ki18n kparts kpmcore kservice kwidgetsaddons
+  libpwquality mkinitcpio-openswap networkmanager polkit-qt6 python
+  qt6-declarative qt6-svg rsync solid squashfs-tools upower yaml-cpp
+  qt6-imageformats python-toml
+)
+makedepends=(
+  boost cmake doxygen extra-cmake-modules git ninja
+  python-jsonschema python-pyaml python-unidecode qt6-tools
+)
+options=('!emptydirs')
+source=(calamares::'git+https://github.com/CachyOS/cachyos-calamares.git#branch=cachyos-dev')
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$srcdir/calamares"
+  _ver="$pkgver"
+  sed -i -e "s|\${CALAMARES_VERSION_MAJOR}.\${CALAMARES_VERSION_MINOR}.\${CALAMARES_VERSION_PATCH}|${_ver}-${pkgrel}|g" CMakeLists.txt
+  sed -i -e 's|CALAMARES_VERSION_RC 1|CALAMARES_VERSION_RC 0|g' CMakeLists.txt
+}
+
+build() {
+  cd "$srcdir/calamares"
+  export CXXFLAGS+=" -fPIC"
+  cmake -S . -B build \
+    -GNinja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DWITH_APPSTREAM=OFF \
+    -DWITH_PYBIND11=OFF \
+    -DWITH_QT6=ON \
+    -DSKIP_MODULES="dracut dracutlukscfg \
+      dummycpp dummyprocess dummypython dummypythonqt \
+      finishedq keyboardq license localeq notesqml oemid \
+      openrcdmcryptcfg packagechooserq fsresizer \
+      rawfs mkinitfs contextualprocess interactiveterminal \
+      plasmalnf services-openrc \
+      summaryq tracking usersq webview welcomeq"
+  cmake --build build
+}
+
+package() {
+  cd "$srcdir/calamares/build"
+  DESTDIR="$pkgdir" cmake --build . --target install
+  install -Dm644 "$srcdir/calamares/settings_offline.conf" \
+    "$pkgdir/usr/share/calamares/settings_offline.conf"
+  install -Dm644 "$srcdir/calamares/settings_online.conf" \
+    "$pkgdir/usr/share/calamares/settings_online.conf"
+  install -Dm644 "$srcdir/calamares/settings_online.conf" \
+    "$pkgdir/usr/share/calamares/settings.conf"
+  install -dm755 "$pkgdir/etc/calamares/modules"
+  cp -rf "$srcdir/calamares/src/modules/"*/*.conf "$pkgdir/etc/calamares/modules/"
+  cp -rf "$srcdir/calamares/src/scripts" "$pkgdir/etc/calamares/"
+  cp -rf "$srcdir/calamares/src/images" "$pkgdir/etc/calamares/"
+  install -Dm644 "$srcdir/calamares/src/modules/netinstall/netinstall.yaml" \
+    "$pkgdir/etc/calamares/modules/netinstall.yaml"
+  rm -rf "$pkgdir/usr/share/applications"
+}

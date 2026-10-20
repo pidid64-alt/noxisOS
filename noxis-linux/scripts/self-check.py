@@ -42,7 +42,7 @@ RUNTIME_CREATED = {"/etc/shadow", "/etc/gshadow", "/etc/passwd", "/etc/group"}
 # binary -> owning package (for the "is it actually installed" check)
 BINARY_PACKAGES = {
     "archinstall": "archinstall", "blueman-manager": "blueman", "brightnessctl": "brightnessctl",
-    "btop": "btop", "calamares": "cachyos-calamares-next", "chwd": "chwd", "cliphist": "cliphist",
+    "btop": "btop", "calamares": "noxis-calamares", "chwd": "chwd", "cliphist": "cliphist",
     "dolphin": "dolphin", "fastfetch": "fastfetch", "firefox": "firefox", "grim": "grim",
     "hyprctl": "hyprland", "hypridle": "hypridle", "hyprlock": "hyprlock",
     "hyprpaper": "hyprpaper", "kitty": "kitty", "mako": "mako", "nvim": "neovim",
@@ -211,7 +211,7 @@ def check_binaries(profile: pathlib.Path, problems: list[str]) -> None:
         "grub": "the GRUB option in Calamares and mkarchiso's efiboot tooling",
         "mtools": "mkarchiso creates the EFI FAT image with mmd/mcopy",
         "squashfs-tools": "the live rootfs is a squashfs",
-        "cachyos-calamares-next": "the installer (current Boost/Python ABI build)",
+        "noxis-calamares": "the locally rebuilt installer (current Boost/Python ABI)",
         "zram-generator": "enables the zram swap unit",
     }
     for package, why in required_always.items():

@@ -31,6 +31,22 @@ missing=()
 ok=0
 while read -r pkg; do
     [[ -n $pkg ]] || continue
+    # This profile-local package is built from source by build.sh. When the
+    # source profile has no temporary local repo configured, validate its
+    # PKGBUILD; with the temporary repo, resolve it through pacman as usual.
+    if [[ $pkg == noxis-calamares ]]; then
+        if pacman --config "$pacman_conf" -S --print --print-format '%n' --noconfirm "$pkg" >/dev/null 2>&1; then
+            (( ok++ ))
+        elif [[ -f ${script_dir}/../packages/noxis-calamares/PKGBUILD ]] \
+             && ! grep -q '^\[noxis-local\]' "$pacman_conf"; then
+            (( ok++ ))
+        elif [[ ! -f ${script_dir}/../packages/noxis-calamares/PKGBUILD ]]; then
+            missing+=("$pkg (local PKGBUILD missing)")
+        else
+            missing+=("$pkg (not found in the temporary noxis-local repo)")
+        fi
+        continue
+    fi
     if pacman --config "$pacman_conf" -S --print --print-format '%n' --noconfirm "$pkg" >/dev/null 2>&1; then
         (( ok++ ))
     else

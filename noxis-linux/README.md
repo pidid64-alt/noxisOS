@@ -66,7 +66,10 @@ On any Arch-based host (CachyOS included):
 ```bash
 cd noxis-linux
 sudo pacman -S --needed archiso git squashfs-tools dosfstools mtools \
-                        libisoburn syslinux grub edk2-shell zstd
+                        libisoburn syslinux grub edk2-shell zstd base-devel \
+                        boost boost-libs cmake doxygen extra-cmake-modules ninja \
+                        pacman-contrib python-jsonschema python-pyaml \
+                        python-unidecode qt6-tools
 ./build.sh                 # -> out/noxis-<date>-x86_64.iso
 ./build.sh --tier v3       # use the x86-64-v3 optimized packages as the base
 ```
