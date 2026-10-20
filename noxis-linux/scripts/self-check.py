@@ -160,6 +160,12 @@ def check_live_installer_and_display(profile: pathlib.Path, problems: list[str])
     if installer.is_file() and "noxis-run-as-root --x11" not in installer.read_text(errors="replace"):
         fail(problems, "noxis-install must launch the root Calamares GUI through XWayland")
 
+    waybar = airootfs / "etc/skel/.config/waybar/config.jsonc"
+    if waybar.is_file():
+        content = waybar.read_text(errors="replace")
+        if '"on-click": "noxis-install"' not in content or "pkexec /usr/local/bin/noxis-run-as-root" in content:
+            fail(problems, "Waybar's installer button must call noxis-install, not bypass its XWayland setup")
+
     bootloader = airootfs / "etc/calamares/modules/noxis-bootloader.conf"
     if bootloader.is_file() and 'efiBootLoader: "grub"' not in bootloader.read_text(errors="replace"):
         fail(problems, "Calamares must default to GRUB (supports legacy BIOS and UEFI)")

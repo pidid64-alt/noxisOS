@@ -7,11 +7,12 @@ set -euo pipefail
 
 if [[ $1 == --x11 ]]; then
     [[ $# -ge 5 ]] || { echo "usage: noxis-run-as-root --x11 DISPLAY XAUTHORITY -- <command> [args...]" >&2; exit 2; }
-    export DISPLAY=$2
-    export XAUTHORITY=$3
-    shift 4
-    [[ $1 == -- ]] || { echo "expected -- before command" >&2; exit 2; }
+    export DISPLAY="$2"
+    export XAUTHORITY="$3"
+    shift 3
+    [[ ${1:-} == -- ]] || { echo "expected -- before command" >&2; exit 2; }
     shift
+    [[ $# -ge 1 ]] || { echo "missing command after --" >&2; exit 2; }
     export QT_QPA_PLATFORM=xcb
     export GDK_BACKEND=x11
     export XDG_SESSION_TYPE=x11

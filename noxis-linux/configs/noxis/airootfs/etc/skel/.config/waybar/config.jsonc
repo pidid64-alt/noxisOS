@@ -136,7 +136,7 @@
     "custom/install": {
         "format": " Install",
         "tooltip": "Install NoxisOS to this computer (Calamares)",
-        "on-click": "pkexec /usr/local/bin/noxis-run-as-root calamares -d",
+        "on-click": "noxis-install",
         "interval": "once"
     },
 
