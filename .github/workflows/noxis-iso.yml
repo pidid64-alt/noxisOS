@@ -78,7 +78,7 @@ jobs:
 
       - name: Check Calamares runtime libraries
         run: |
-          pacman --config "$PROFILE/pacman.conf" -Sy --needed --noconfirm cachyos-calamares-next
+          pacman --config "$PROFILE/pacman.conf" -Sy --needed --noconfirm cachyos-calamares-next boost boost-libs
           ldd /usr/bin/calamares | tee /tmp/calamares-ldd.txt
           missing=$(grep 'not found' /tmp/calamares-ldd.txt || true)
           if [[ -n $missing ]]; then
