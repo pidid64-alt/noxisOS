@@ -10,8 +10,14 @@ repo_dir=${1:?usage: build-calamares.sh <repo-dir> [profile-copy-dir]}
 profile_copy=${2:-}
 repo_dir=$(realpath -m -- "$repo_dir")
 
-packages=(base-devel boost boost-libs cmake doxygen extra-cmake-modules git ninja
-          pacman-contrib python-jsonschema python-pyaml python-unidecode qt6-tools)
+packages=(
+  base-devel boost boost-libs cmake doxygen extra-cmake-modules git ninja
+  pacman-contrib python-jsonschema python-pyaml python-unidecode qt6-tools
+  ckbcomp cryptsetup dmidecode gptfdisk hwinfo kconfig kcoreaddons kcrash
+  ki18n kparts kpmcore kservice kwidgetsaddons libpwquality mkinitcpio-openswap
+  networkmanager polkit-qt6 python qt6-declarative qt6-svg rsync solid
+  squashfs-tools upower yaml-cpp qt6-imageformats python-toml
+)
 run_pacman() {
     if (( EUID == 0 )); then
         pacman --config "${source_profile}/pacman.conf" "$@"
