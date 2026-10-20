@@ -59,6 +59,9 @@ pacman-contrib
 paru
 
 # --- CachyOS integration ---------------------------------------------------
+# Calamares loads Boost.Python at runtime; keep Boost's versioned shared
+# library package explicit so pacstrap cannot omit it from the live image.
+boost-libs
 cachyos-keyring
 cachyos-mirrorlist
 cachyos-v3-mirrorlist

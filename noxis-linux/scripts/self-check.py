@@ -205,6 +205,7 @@ def check_binaries(profile: pathlib.Path, problems: list[str]) -> None:
             fail(problems, f"'{binary}' is used by the profile but '{package}' is not in packages.x86_64")
 
     required_always = {
+        "boost-libs": "Calamares's versioned Boost.Python runtime library",
         "syslinux": "BIOS boot (bios.syslinux)",
         "grub": "the GRUB option in Calamares and mkarchiso's efiboot tooling",
         "mtools": "mkarchiso creates the EFI FAT image with mmd/mcopy",
