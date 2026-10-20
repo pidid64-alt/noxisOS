@@ -74,7 +74,7 @@ differences are deliberate and are listed below.
 Calamares runs the `noxis` branding and this sequence (see `etc/calamares/settings.conf`).
 
 > **Why every config is called `noxis-<module>.conf`:** archiso copies `airootfs/`
-> into the build root *before* it installs packages, and the `cachyos-calamares`
+> into the build root *before* it installs packages, and the `cachyos-calamares-next`
 > package owns the stock `/etc/calamares/modules/<module>.conf` files. Shipping a
 > file with the same name aborts the build with `exists in filesystem`. The
 > overrides are therefore bound to their modules through `instances:` in

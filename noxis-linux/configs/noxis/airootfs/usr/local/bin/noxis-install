@@ -10,7 +10,7 @@ fi
 
 if ! command -v calamares >/dev/null 2>&1; then
     echo "Calamares is not installed in this live image." >&2
-    echo "Run: pacman -Q cachyos-calamares calamares" >&2
+    echo "Run: pacman -Q cachyos-calamares-next calamares" >&2
     if command -v kitty >/dev/null 2>&1 && command -v archinstall >/dev/null 2>&1; then
         exec kitty -e archinstall
     fi

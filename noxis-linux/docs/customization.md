@@ -90,7 +90,7 @@ Everything Calamares does is in `airootfs/etc/calamares/`:
 | `modules/noxis-welcome.conf` | RAM/disk requirements, which checks block the install |
 | `scripts/noxis-prepare`, `scripts/noxis-finalize` | the two shell hooks that clean up and finish the target |
 
-Overrides are named `noxis-<module>.conf` on purpose: the `cachyos-calamares`
+Overrides are named `noxis-<module>.conf` on purpose: the `cachyos-calamares-next`
 package owns `/etc/calamares/modules/<module>.conf`, and airootfs files are
 copied before packages are installed, so identical names fail the build with
 `exists in filesystem`. Each override is bound to its module by an entry in the

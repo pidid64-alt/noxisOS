@@ -260,7 +260,7 @@ ttf-fantasque-nerd
 terminus-font
 
 # --- live-only: installer + VM guests -------------------------------------
-cachyos-calamares
+cachyos-calamares-next
 archinstall
 qemu-guest-agent
 open-vm-tools

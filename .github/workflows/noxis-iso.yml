@@ -78,10 +78,11 @@ jobs:
 
       - name: Check Calamares runtime libraries
         run: |
-          pacman --config "$PROFILE/pacman.conf" -Sy --needed --noconfirm cachyos-calamares
+          pacman --config "$PROFILE/pacman.conf" -Sy --needed --noconfirm cachyos-calamares-next
           ldd /usr/bin/calamares | tee /tmp/calamares-ldd.txt
-          if grep -q 'not found' /tmp/calamares-ldd.txt; then
-            echo "::error title=Calamares runtime dependency missing::The installer binary has unresolved shared libraries; refuse to publish an ISO that cannot launch Calamares."
+          missing=$(grep 'not found' /tmp/calamares-ldd.txt || true)
+          if [[ -n $missing ]]; then
+            echo "::error title=Calamares runtime dependency missing::${missing//%/%25}"
             exit 1
           fi
 
