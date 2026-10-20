@@ -76,6 +76,15 @@ jobs:
       - name: Profile self-check (paths, configs, cross-references)
         run: python3 noxis-linux/scripts/self-check.py "$PROFILE"
 
+      - name: Check Calamares runtime libraries
+        run: |
+          pacman --config "$PROFILE/pacman.conf" -Sy --needed --noconfirm cachyos-calamares
+          ldd /usr/bin/calamares | tee /tmp/calamares-ldd.txt
+          if grep -q 'not found' /tmp/calamares-ldd.txt; then
+            echo "::error title=Calamares runtime dependency missing::The installer binary has unresolved shared libraries; refuse to publish an ISO that cannot launch Calamares."
+            exit 1
+          fi
+
       - name: Install Hyprland (to verify the shipped config with its own parser)
         run: pacman -Sy --noconfirm --needed --disable-download-timeout hyprland
 
