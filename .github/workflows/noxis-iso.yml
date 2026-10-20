@@ -77,7 +77,14 @@ jobs:
         run: |
           repo="$RUNNER_TEMP/noxis-calamares-repo"
           profile="$RUNNER_TEMP/noxis-profile"
-          ./noxis-linux/scripts/build-calamares.sh "$repo" "$profile"
+          log=/tmp/noxis-calamares-build.log
+          if ! ./noxis-linux/scripts/build-calamares.sh "$repo" "$profile" >"$log" 2>&1; then
+            tail -n 24 "$log"
+            report="$(tail -n 24 "$log" | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            echo "::error title=Calamares source build failed::$report"
+            exit 1
+          fi
+          tail -n 12 "$log"
           echo "PROFILE=$profile" >> "$GITHUB_ENV"
 
       - name: Check that every package resolves
