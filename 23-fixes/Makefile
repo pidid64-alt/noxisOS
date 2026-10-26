@@ -1,5 +1,5 @@
-C_SOURCES = $(wildcard kernel/*.c drivers/*.c cpu/*.c libc/*.c)
-HEADERS = $(wildcard kernel/*.h drivers/*.h cpu/*.h libc/*.h)
+C_SOURCES = $(wildcard kernel/*.c drivers/*.c cpu/*.c libc/*.c net/*.c)
+HEADERS = $(wildcard kernel/*.h drivers/*.h cpu/*.h libc/*.h net/*.h)
 # Nice syntax for file extension replacement
 OBJ = ${C_SOURCES:.c=.o cpu/interrupt.o}
 
@@ -51,14 +51,19 @@ noxis.iso: noxis.elf
 	  > $(ISO_DIR)/boot/grub/grub.cfg
 	grub-mkrescue -o $@ $(ISO_DIR)
 
+# Networking: a NE2000 ISA NIC on QEMU's user-mode stack. The guest uses the
+# static slirp addresses (10.0.2.15/24, gateway 10.0.2.2), so "make run" +
+# "PING 10.0.2.2" works out of the box.
+NETDEV = -netdev user,id=net0 -device ne2k_isa,netdev=net0,iobase=0x300,irq=9
+
 run: os-image.bin
-	qemu-system-i386 -fda os-image.bin
+	qemu-system-i386 -fda os-image.bin $(NETDEV)
 
 run-grub: noxis.iso
-	qemu-system-i386 -cdrom noxis.iso
+	qemu-system-i386 -cdrom noxis.iso $(NETDEV)
 
 debug: os-image.bin noxis.elf
-	qemu-system-i386 -s -fda os-image.bin -d guest_errors,int &
+	qemu-system-i386 -s -fda os-image.bin -d guest_errors,int $(NETDEV) &
 	${GDB} -ex "target remote localhost:1234" -ex "symbol-file noxis.elf"
 
 %.o: %.c ${HEADERS}
@@ -69,4 +74,4 @@ debug: os-image.bin noxis.elf
 
 clean:
 	rm -rf *.bin *.dis *.o *.elf *.iso os-image.bin isodir
-	rm -rf kernel/*.o boot/*.bin drivers/*.o boot/*.o cpu/*.o libc/*.o
+	rm -rf kernel/*.o boot/*.bin drivers/*.o boot/*.o cpu/*.o libc/*.o net/*.o

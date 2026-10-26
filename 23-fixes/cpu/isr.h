@@ -79,12 +79,16 @@ extern void isr81();
  * - `push byte`s on the isr-specific code: error code, then int number
  * - All the registers by pusha
  * - `push eax` whose lower 16-bits contain DS
- */
+ *
+ * For a ring-0 interrupt the CPU pushes only eip/cs/eflags, so the frame
+ * ends at eflags. ("useless" is pusha's esp slot: the value of esp *before*
+ * pusha ran, i.e. a pointer to the int_no slot of this very frame -- the
+ * IRQ stub uses it to switch to the interrupted task's own stack.) */
 typedef struct {
    uint32_t ds; /* Data segment selector */
    uint32_t edi, esi, ebp, useless, ebx, edx, ecx, eax; /* Pushed by pusha. */
    uint32_t int_no, err_code; /* Interrupt number and error code (if applicable) */
-   uint32_t eip, cs, eflags, esp, ss; /* Pushed by the processor automatically */
+   uint32_t eip, cs, eflags; /* Pushed by the processor automatically */
 } registers_t;
 
 void isr_install();

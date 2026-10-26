@@ -50,8 +50,15 @@ irq_common_stub:
     mov fs, bx
     mov gs, bx
     popa
+    add esp, 8       ; esp -> eip slot of the real (ring-0) frame
+    ; Switch to the interrupted task's own stack. pusha saved the pre-pusha
+    ; esp in its 4th slot (registers_t."useless", 28 bytes below the eip
+    ; slot); the scheduler may have replaced it with the next task's saved
+    ; pointer. The pointer aims at that task's int_no slot, so +8 lands on
+    ; its eip and iret resumes the task there.
+    mov esp, [esp - 28]
     add esp, 8
-    iret 
+    iret
 	
 ; We don't get information about which interrupt was caller
 ; when the handler is run, so we will need to have a different handler

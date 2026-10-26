@@ -45,6 +45,7 @@ They share the name and the taste in colours, not a single line of code.
 | **Shell** | `24` | Command table + dispatch: `HELP`, `CLEAR`, `ECHO`, `VERSION`, `TIME`, `UPTIME`, `MEM`, `END`, `PAGE`. |
 | **RTC** | `24` | CMOS real-time clock driver for the `TIME` command. |
 | **Scheduler** | `24` | Preemptive weighted round-robin scheduler (50 Hz timer) + kernel threads; kernel task is idle. |
+| **Networking** | `23-fixes/net/` | NE2000 driver + ARP/IPv4/ICMP over QEMU user networking (`PING`, `IFCONFIG`, `ARP`); see [docs/network-design.md](docs/network-design.md). |
 
 ### Shell commands
 
@@ -63,6 +64,9 @@ PS      list running tasks
 RUN     spawn a demo task with an optional weight: RUN <name> [weight]
 KILL    ask a task to exit: KILL <id>
 YIELD   voluntarily reschedule the CPU
+PING    send ICMP echoes: PING <a.b.c.d>   e.g.  PING 10.0.2.2
+IFCONFIG show the network interface (MAC, IP, gateway, counters)
+ARP     show the ARP cache
 ```
 
 ---
@@ -128,11 +132,12 @@ under `23-fixes/` (symlinked into `24-el-capitan/`), and the interactive shell
 ├── cpu/         GDT, IDT, ISRs, IRQs, PIT timer, port I/O
 ├── drivers/     screen.c  keyboard.c  shell.c  rtc.c   <- noxis additions
 ├── kernel/      kernel.c (entry + shell wiring)
-└── libc/        string.c  mem.c  (int_to_ascii, kmalloc, ...)
+├── libc/        string.c  mem.c  (int_to_ascii, kmalloc, ...)
+└── net/         ne2000.c  net.c  arp.c  ip.c          <- ARP/IPv4/ICMP stack
 ```
 
 The new files for `noxis` are `drivers/shell.c`, `drivers/shell.h`,
-`drivers/rtc.c`, and `drivers/rtc.h`.
+`drivers/rtc.c`, `drivers/rtc.h`, and the `net/` stack.
 
 ---
 
@@ -182,6 +187,26 @@ If you prefer the C API, drive it through `task.h`: `task_init()`,
 
 ---
 
+## 🌐 Networking
+
+`make run` attaches an NE2000 NIC to QEMU's user-mode network (slirp). The
+guest is configured statically for that virtual LAN — `10.0.2.15/24`,
+gateway `10.0.2.2` — so networking works out of the box:
+
+```
+PING 10.0.2.2      real ARP + ICMP exchange with the slirp gateway
+IFCONFIG           MAC/IP/netmask/gateway, RX/TX counters
+ARP                the address resolution cache
+```
+
+The stack (`23-fixes/net/`: driver + ARP + IPv4 + ICMP) is described in
+[docs/network-design.md](docs/network-design.md), and `tests/qemu_test.py`
+(`t8_net_ne2000`, `t9_net_absent_graceful`) exercises it end to end —
+`tests/docker-test.sh` runs the whole thing inside a docker container when
+the host has no i386 toolchain.
+
+---
+
 ## 🛠️ Ideas to extend noxis
 
 - Command history with the arrow keys (keyboard driver work)
@@ -190,5 +215,6 @@ If you prefer the C API, drive it through `task.h`: `task_init()`,
 - User mode + a second privilege ring
 - User-mode tasks + privilege rings
 - Per-task CPU accounting / `TOP`-style view over `TASKS`
+- DHCP + UDP/DNS on top of the new network stack
 
 Have fun — and remember, the only way to be sure you understood it is to break it.

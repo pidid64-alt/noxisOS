@@ -3,6 +3,7 @@
 #include "../drivers/fb.h"
 #include "../drivers/screen.h"
 #include "../drivers/shell.h"
+#include "../net/net.h"
 #include "kernel.h"
 #include <stdint.h>
 
@@ -20,6 +21,7 @@ void kernel_main(uint32_t magic, uint32_t mbi_addr) {
     isr_install();
     irq_install();
     task_init();   /* bring up the preemptive scheduler (kernel task = slot 0) */
+    net_init();    /* NE2000 probe; quiet — IFCONFIG reports what was found */
 
     /* Publish global OS state. */
     g_kernel.version = "noxis 24-el-capitan";

@@ -87,15 +87,16 @@ int task_create_prio(const char *name, void (*entry)(void), uint8_t weight) {
     uint32_t stack_top = stack + TASK_STACK_SIZE;
 
     /* Build a synthetic interrupt frame at the top of the new stack so that
-     * the scheduler's iret resumes task_trampoline. iret pops, low address
-     * first: eip, cs, eflags, esp, ss. We push in the reverse order so ss ends
-     * up at the highest address. */
+     * the IRQ stub's iret resumes task_trampoline ON THIS STACK. The stub
+     * switches esp to the value in registers_t."useless" (the pusha esp
+     * slot), which must point at this frame's int_no slot; after +8 it sits
+     * on eip and iret pops eip/cs/eflags from here. */
     uint32_t *sp = (uint32_t *)stack_top;
-    *--sp = 0x10;                  /* ss  (kernel data) */
-    *--sp = stack_top - 20;        /* esp: post-iret stack pointer (just below frame) */
     *--sp = 0x202;                 /* eflags: interrupts enabled */
     *--sp = KERNEL_CS;             /* cs  (kernel code) */
     *--sp = (uint32_t)task_trampoline; /* eip */
+    *--sp = 0;                     /* err_code (skipped by the stub) */
+    *--sp = 0;                     /* int_no   (skipped by the stub) */
 
     task_t *t = &tasks[slot];
     t->id = slot;
@@ -109,8 +110,15 @@ int task_create_prio(const char *name, void (*entry)(void), uint8_t weight) {
     t->weight = weight;
     t->quantum_left = weight;           /* fresh full quantum on spawn */
     memory_set((uint8_t *)&t->regs, 0, sizeof(registers_t));
-    t->regs.esp = (uint32_t)sp;    /* popa loads this; iret then pops eip..ss */
-    t->regs.eip = (uint32_t)task_trampoline; /* informational; iret uses the stack */
+
+    /* What the IRQ stub needs to start this task: ds is reloaded into the
+     * segment registers, useless is the stack switch target, and eip/cs/
+     * eflags mirror the frame for anyone inspecting the PCB. */
+    t->regs.ds      = 0x10;            /* kernel data segment */
+    t->regs.useless = (uint32_t)sp;    /* -> int_no slot of the frame above */
+    t->regs.eip     = (uint32_t)task_trampoline;
+    t->regs.cs      = KERNEL_CS;
+    t->regs.eflags  = 0x202;           /* IF=1: task runs with IRQs on */
 
     return slot;
 }
@@ -137,7 +145,10 @@ int task_kill(int id) {
  * scheduler rotates to the next runnable task. The kernel/idle task (slot 0) is
  * never weighted — it only runs when no weighted task is runnable. */
 void scheduler_tick(registers_t *r) {
-    /* 1. Save the interrupted task's context. */
+    /* 1. Save the interrupted task's context. A preempted RUNNING task
+     * becomes READY, but a SLEEPING task keeps its state -- task_sleep()
+     * sets SLEEPING before yielding, and demoting it here would make the
+     * scheduler resume it immediately (the sleep would never sleep). */
     if (current_task >= 0 && current_task < MAX_TASKS) {
         tasks[current_task].regs = *r;
         if (tasks[current_task].state == TASK_RUNNING)
@@ -174,12 +185,21 @@ void scheduler_tick(registers_t *r) {
     }
 
     if (next < 0) {
-        /* Nothing else runnable: whoever was on the CPU keeps running.
-         * Step 1 above demoted it to READY, so put it back to RUNNING --
-         * otherwise a lone task would sit on the CPU marked READY and
-         * task_count()/TASKS would over-report the number of runnable tasks. */
-        if (current_task >= 0 && current_task < MAX_TASKS)
-            tasks[current_task].state = TASK_RUNNING;
+        /* Nothing else runnable: hand the CPU to the kernel/idle task
+         * (slot 0). Resuming the current task here would turn every
+         * task_sleep() into a no-op whenever it is the only task -- the
+         * yield inside task_sleep would bounce right back to the sleeping
+         * task. tasks[0].regs is valid by the time tasks exist: the timer
+         * preempts the running shell and saves its frame on every tick.
+         * (current_task == -1 before task_init: just keep running.) */
+        if (current_task > 0) {
+            tasks[0].state = TASK_RUNNING;
+            tasks[0].ticks++;
+            current_task = 0;
+            *r = tasks[0].regs;
+        } else if (current_task == 0) {
+            tasks[0].state = TASK_RUNNING;
+        }
         return;
     }
 

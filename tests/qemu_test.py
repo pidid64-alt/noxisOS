@@ -17,16 +17,18 @@ MON = "/tmp/noxis-qmon"
 
 
 class Noxis:
-    def __init__(self):
+    def __init__(self, extra_qemu_args=None):
+        cmd = ["qemu-system-i386", "-m", "32",
+               "-drive", f"format=raw,file={IMAGE}",
+               "-display", "none", "-no-reboot", "-no-shutdown",
+               "-monitor", f"unix:{MON},server,nowait"]
+        if extra_qemu_args:
+            cmd += extra_qemu_args
         self.qemu = subprocess.Popen(
-            ["qemu-system-i386", "-m", "32",
-             "-drive", f"format=raw,file={IMAGE}",
-             "-display", "none", "-no-reboot", "-no-shutdown",
-             "-monitor", f"unix:{MON},server,nowait"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.s = None
         try:
-            deadline = time.time() + 5
+            deadline = time.time() + 20
             while True:
                 try:
                     self.s = socket.socket(socket.AF_UNIX)
@@ -57,7 +59,8 @@ class Noxis:
         self.s.sendall((c + "\n").encode())
         self.drain()
 
-    _KEYMAP = {" ": "spc", "\n": "ret"}
+    _KEYMAP = {" ": "spc", "\n": "ret", ".": "dot", "-": "minus",
+               "=": "equal", "/": "slash", ",": "comma"}
 
     def type_line(self, text):
         """Type a command line and press Enter. Lowercase is fine: the
@@ -67,37 +70,56 @@ class Noxis:
         self.cmd("sendkey ret")
 
     def screen(self):
-        self.cmd("xp /2000xb 0xb8000")
-        # Re-query with a proper blocking read: drain() ate the reply above,
-        # so ask again and collect until quiet period.
-        self.s.settimeout(0.5)
-        self.s.sendall(b"xp /2000xb 0xb8000\n")
-        buf = b""
-        try:
-            while len(buf) < 100000:
-                d = self.s.recv(65536)
-                if not d:
-                    break
-                buf += d
-        except socket.timeout:
-            pass
-        vals = []
-        for line in buf.decode("latin1").splitlines():
-            if ":" not in line:
-                continue
-            vals += re.findall(r"0x([0-9a-f]{2})\b", line.split(":", 1)[1])
+        # Read the 25 text rows one xp request each. A single xp /2000xb
+        # (250 output lines) stalls partway through -- the HMP monitor
+        # paginates long output and waits for a keypress on a socket
+        # monitor -- which made everything below the first screenful look
+        # empty. 160-byte requests (20 lines) stay under the pager limit.
         chars = []
-        for i in range(0, len(vals) - 1, 2):
-            c = int(vals[i], 16)
-            chars.append(chr(c) if 32 <= c < 127 else " ")
+        for row in range(25):
+            vals = self.xp_bytes(0xB8000 + row * 160, 160)
+            for i in range(0, len(vals) - 1, 2):
+                c = vals[i]
+                chars.append(chr(c) if 32 <= c < 127 else " ")
         rows = ["".join(chars[r * 80:(r + 1) * 80]).rstrip() for r in range(25)]
-        self.s.settimeout(0.05)
         return rows
 
+    def xp_bytes(self, addr, n):
+        """Read n bytes of guest memory via the monitor and return them as
+        a list of ints. Collects until the full reply has arrived."""
+        self.s.settimeout(1.5)
+        self.s.sendall(("xp /%dxb 0x%x\n" % (n, addr)).encode())
+        buf = b""
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            try:
+                d = self.s.recv(65536)
+            except socket.timeout:
+                continue
+            if not d:
+                break
+            buf += d
+            pairs = 0
+            for line in buf.decode("latin1").splitlines():
+                if re.match(r"^0+", line) and ":" in line:
+                    pairs += len(re.findall(r"0x[0-9a-f]{2}\b",
+                                            line.split(":", 1)[1]))
+            if pairs >= n:
+                break
+        vals = []
+        for line in buf.decode("latin1").splitlines():
+            if re.match(r"^0+", line) and ":" in line:
+                vals += re.findall(r"0x([0-9a-f]{2})\b", line.split(":", 1)[1])
+        return [int(x, 16) for x in vals[:n]]
+
     def expect(self, substr, seconds=5):
+        # Case-insensitive on purpose: the kernel's sc_ascii table only
+        # produces uppercase letters, so typed input and echoed args come
+        # back capitalized regardless of what the test typed.
+        needle = substr.lower()
         deadline = time.time() + seconds
         while time.time() < deadline:
-            if any(substr in row for row in self.screen()):
+            if any(needle in row.lower() for row in self.screen()):
                 return True
             time.sleep(0.3)
         return False
@@ -106,7 +128,7 @@ class Noxis:
         """Like expect(), but matches a regex against each screen row. Used
         where the expected output is not a fixed string (e.g. the wall
         clock), so the assertion cannot depend on today's date."""
-        rx = re.compile(pattern)
+        rx = re.compile(pattern, re.IGNORECASE)
         deadline = time.time() + seconds
         while time.time() < deadline:
             if any(rx.search(row) for row in self.screen()):
@@ -216,8 +238,13 @@ def t5_weights_3to1():
         v.type_line("run spin")     # default weight 3
         v.type_line("run blink")    # default weight 1
         time.sleep(12)              # let ticks accumulate
+        v.type_line("tasks")        # print the table the parser reads
+        time.sleep(1)
         s1, b1 = v.read_task_ticks("spin"), v.read_task_ticks("blink")
+        assert s1 is not None and b1 is not None, "TASKS rows not found"
         time.sleep(5)
+        v.type_line("tasks")
+        time.sleep(1)
         s2, b2 = v.read_task_ticks("spin"), v.read_task_ticks("blink")
         ds, db = s2 - s1, b2 - b1
         ratio = ds / max(db, 1)
@@ -240,6 +267,52 @@ def t6_yield_alive():
 
 
 ISO = "23-fixes/noxis.iso"
+
+NET_ARGS = ["-netdev", "user,id=net0",
+            "-device", "ne2k_isa,netdev=net0,iobase=0x300,irq=9"]
+
+
+def t8_net_ne2000():
+    """Networking: with a ne2k_isa on the default slirp LAN, IFCONFIG must
+    show the static 10.0.2.15/24 setup, and PING 10.0.2.2 (the slirp
+    gateway) must resolve ARP, exchange ICMP echoes and fill the ARP table.
+    Exercises the NE2000 driver IRQ path, ARP and IPv4/ICMP end to end."""
+    v = Noxis(NET_ARGS)
+    try:
+        v.type_line("ifconfig")
+        assert v.expect("eth0: NE2000 at 0x300 irq 9"), "IFCONFIG silent"
+        assert v.expect("inet 10.0.2.15"), "no guest address"
+        assert v.expect_re(r"ether [0-9a-f]{2}(:[0-9a-f]{2}){5}"), "no MAC"
+
+        v.type_line("ping 10.0.2.2")
+        assert v.expect_re(r"16 bytes from 10\.0\.2\.2", 20), \
+            "no ICMP echo replies from the slirp gateway"
+        assert v.expect_re(r"\d+ received"), "no ping summary"
+
+        v.type_line("arp")
+        assert v.expect("10.0.2.2"), "gateway missing from ARP table"
+
+        v.type_line("help")
+        assert v.expect("Available commands", 5), "shell dead after PING"
+        return True, ""
+    finally:
+        v.close()
+
+
+def t9_net_absent_graceful():
+    """Without -netdev the shell must stay alive and report the missing
+    card instead of touching the empty port range."""
+    v = Noxis()
+    try:
+        v.type_line("ifconfig")
+        assert v.expect("no NE2000"), "missing card not reported"
+        v.type_line("ping 10.0.2.2")
+        assert v.expect("no network card", 5), "PING did not notice"
+        v.type_line("help")
+        assert v.expect("Available commands", 5), "shell dead"
+        return True, ""
+    finally:
+        v.close()
 
 
 def t7_grub_iso_boots():
@@ -316,7 +389,8 @@ def t7_grub_iso_boots():
 
 TESTS = [t1_regress_interactive, t2_run_blink_shell_alive,
          t3_parallel_tasks, t4_cooperative_kill,
-         t5_weights_3to1, t6_yield_alive, t7_grub_iso_boots]
+         t5_weights_3to1, t6_yield_alive, t7_grub_iso_boots,
+         t8_net_ne2000, t9_net_absent_graceful]
 
 if __name__ == "__main__":
     wanted = sys.argv[1:]

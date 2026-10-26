@@ -4,6 +4,9 @@
 #include "../cpu/timer.h"
 #include "../cpu/isr.h"
 #include "../cpu/task.h"
+#include "../net/net.h"
+#include "../net/arp.h"
+#include "../net/ip.h"
 #include "tasks_demo.h"
 #include "../libc/string.h"
 #include "../libc/mem.h"
@@ -36,6 +39,9 @@ static void cmd_ps(char *args);
 static void cmd_run(char *args);
 static void cmd_kill(char *args);
 static void cmd_yield(char *args);
+static void cmd_ping(char *args);
+static void cmd_ifconfig(char *args);
+static void cmd_arp(char *args);
 
 static shell_command_t COMMANDS[] = {
     {"HELP",    "list available commands",          cmd_help},
@@ -52,6 +58,9 @@ static shell_command_t COMMANDS[] = {
     {"RUN",     "spawn a demo task: RUN <name> [weight]", cmd_run},
     {"KILL",    "ask a task to exit: KILL <id>",    cmd_kill},
     {"YIELD",   "voluntarily reschedule the CPU",   cmd_yield},
+    {"PING",    "send ICMP echoes: PING <a.b.c.d>", cmd_ping},
+    {"IFCONFIG","show network interface state",     cmd_ifconfig},
+    {"ARP",     "show the ARP cache",               cmd_arp},
 };
 
 #define NUM_COMMANDS (sizeof(COMMANDS) / sizeof(COMMANDS[0]))
@@ -297,6 +306,173 @@ static void cmd_yield(char *args) {
     UNUSED(args);
     task_yield();
     kprint("yielded\n");
+}
+
+/* Parse "a.b.c.d" into a host-order IPv4 address. Returns 0 on success. */
+static int parse_ip(const char *s, uint32_t *out) {
+    uint32_t ip = 0;
+    int part;
+
+    if (s == 0) return -1;
+    for (part = 0; part < 4; part++) {
+        int v = 0, digits = 0;
+        while (*s >= '0' && *s <= '9') {
+            v = v * 10 + (*s - '0');
+            s++;
+            digits++;
+            if (digits > 3 || v > 255) return -1;
+        }
+        if (digits == 0) return -1;
+        ip = (ip << 8) | (uint32_t)v;
+        if (part < 3) {
+            if (*s != '.') return -1;
+            s++;
+        }
+    }
+    if (*s != '\0') return -1;
+    *out = ip;
+    return 0;
+}
+
+/* PING <a.b.c.d>: four ICMP echo requests with a one-second timeout each.
+ * The waits are hlt-parked: the NIC IRQ or the 50 Hz timer wakes us, and
+ * net_poll() drains whatever arrived. */
+static void cmd_ping(char *args) {
+    uint32_t ip;
+    char ipbuf[16], nbuf[12];
+    int sent = 0, recv = 0, seq;
+
+    if (parse_ip(args, &ip) != 0) {
+        kprint("usage: PING <a.b.c.d>      e.g. PING 10.0.2.2\n");
+        return;
+    }
+    if (!net_up()) {
+        kprint("no network card found (start QEMU with: make run)\n");
+        return;
+    }
+
+    ip_to_str(ip, ipbuf);
+    kprint("PING ");
+    kprint(ipbuf);
+    kprint(": 4 x 16-byte ICMP echo requests\n");
+
+    for (seq = 1; seq <= 4; seq++) {
+        uint32_t t0, deadline;
+        uint8_t mac[6];
+        int ok = 0;
+
+        /* Resolve the next hop; the very first lookup sends the ARP
+         * request, subsequent ones just wait for the reply. */
+        deadline = tick + 100;          /* 2 s for ARP */
+        while ((int32_t)(tick - deadline) < 0) {
+            net_poll();
+            if (arp_lookup(ip, mac) == 0) { ok = 1; break; }
+            asm volatile("hlt");
+        }
+        if (!ok) {
+            kprint("no ARP response from ");
+            kprint(ipbuf);
+            kprint("\n");
+            continue;
+        }
+
+        ping_got_reply = 0;
+        t0 = tick;
+        icmp_ping(ip, (uint16_t)seq);
+        sent++;
+
+        deadline = tick + 50;           /* 1 s per echo */
+        while ((int32_t)(tick - deadline) < 0) {
+            net_poll();
+            if (ping_got_reply && ping_reply_seq == (uint16_t)seq) break;
+            asm volatile("hlt");
+        }
+
+        if (ping_got_reply && ping_reply_seq == (uint16_t)seq) {
+            uint32_t ms = (tick - t0) * 20;   /* 50 Hz: one tick = 20 ms */
+            recv++;
+            ip_to_str(ping_reply_from, ipbuf);
+            kprint("16 bytes from ");
+            kprint(ipbuf);
+            kprint(": icmp_seq=");
+            int_to_ascii(seq, nbuf);
+            kprint(nbuf);
+            kprint(" ttl=64 time=");
+            int_to_ascii((int)ms, nbuf);
+            kprint(nbuf);
+            kprint(" ms\n");
+        } else {
+            kprint("request timeout for icmp_seq ");
+            int_to_ascii(seq, nbuf);
+            kprint(nbuf);
+            kprint("\n");
+        }
+    }
+
+    int_to_ascii(sent, nbuf);
+    kprint(nbuf);
+    kprint(" packets transmitted, ");
+    int_to_ascii(recv, nbuf);
+    kprint(nbuf);
+    kprint(" received, ");
+    int_to_ascii((sent - recv) * 100 / (sent ? sent : 1), nbuf);
+    kprint("% packet loss\n");
+}
+
+/* IFCONFIG: dump the one interface we have. */
+static void cmd_ifconfig(char *args) {
+    char ipbuf[16], macbuf[18], nbuf[12];
+    uint8_t mac[6];
+    UNUSED(args);
+
+    if (!net_up()) {
+        kprint("eth0: no NE2000 at 0x300 (run QEMU with: make run)\n");
+        return;
+    }
+
+    net_get_mac(mac);
+    mac_to_str(mac, macbuf);
+    kprint("eth0: NE2000 at 0x300 irq 9\n");
+    kprint("ether ");
+    kprint(macbuf);
+    kprint("\n");
+    ip_to_str(net_ip, ipbuf);
+    kprint("inet ");
+    kprint(ipbuf);
+    kprint("\n");
+    ip_to_str(net_mask, ipbuf);
+    kprint("netmask ");
+    kprint(ipbuf);
+    kprint("\n");
+    ip_to_str(net_gw, ipbuf);
+    kprint("gateway ");
+    kprint(ipbuf);
+    kprint("\n");
+    int_to_ascii((int)net_rx_packets, nbuf);
+    kprint("RX ");
+    kprint(nbuf);
+    int_to_ascii((int)net_tx_packets, nbuf);
+    kprint(" packets, TX ");
+    kprint(nbuf);
+    int_to_ascii((int)net_rx_dropped, nbuf);
+    kprint(" packets, ");
+    kprint(nbuf);
+    kprint(" dropped\n");
+}
+
+/* ARP: show the address resolution cache. */
+static void cmd_arp(char *args) {
+    UNUSED(args);
+    if (!net_up()) {
+        kprint("no network card found (start QEMU with: make run)\n");
+        return;
+    }
+    net_poll();
+    if (arp_count() == 0) {
+        kprint("ARP table is empty (try PING 10.0.2.2 first)\n");
+        return;
+    }
+    arp_dump();
 }
 
 void shell_run(char *input) {
