@@ -21,6 +21,7 @@
 #define GUI_KEY_PGDN	0x04	/* Page Down     */
 #define GUI_KEY_HOME	0x05	/* Home          */
 #define GUI_KEY_END	0x06	/* End           */
+#define GUI_KEY_DEL	0x07	/* Delete        */
 
 struct s_tty;
 struct s_console;

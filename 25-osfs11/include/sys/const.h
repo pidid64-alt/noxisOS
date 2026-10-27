@@ -173,7 +173,8 @@
 #define TASK_MM		4
 #define TASK_GFX	5
 #define TASK_DESKTOP	6
-#define INIT		7
+#define TASK_NET	7
+#define INIT		8
 #define ANY		(NR_TASKS + NR_PROCS + 10)
 #define NO_TASK		(NR_TASKS + NR_PROCS + 20)
 
@@ -229,6 +230,10 @@ enum msgtype {
 	DESKTOP_START,	/* a user proc asks TASK_DESKTOP to start GUI */
 	DESKTOP_DONE,	/* TASK_DESKTOP finished, reply to the caller */
 	SYS_POWEROFF,	/* power the machine down (any ring may ask TASK_SYS) */
+
+	/* NET */
+	NET_RESOLVE,	/* PATHNAME = hostname; reply DEVICE = ip, RETVAL */
+	NET_PING,	/* m3i1 = ip, m3i2 = count, BUF = u32 rtts[] */
 
 	/* message type for drivers */
 	DEV_OPEN = 1001,

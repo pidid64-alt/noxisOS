@@ -82,6 +82,10 @@ PUBLIC void task_gfx();
 /* desktop.c */
 PUBLIC void task_desktop();
 
+/* net/main.c */
+PUBLIC void task_net();
+PUBLIC void ip_to_str(u32 ip, char out[16]);
+
 /* mouse.c */
 PUBLIC void mouse_init();
 PUBLIC void mouse_handler(int irq);

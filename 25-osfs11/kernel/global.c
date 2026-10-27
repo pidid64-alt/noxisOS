@@ -33,7 +33,8 @@ PUBLIC	struct task	task_table[NR_TASKS] = {
 	{task_fs,       STACK_SIZE_FS,      "FS"        },
 	{task_mm,       STACK_SIZE_MM,      "MM"        },
 	{task_gfx,      STACK_SIZE_GFX,     "GFX"       },
-	{task_desktop,  STACK_SIZE_DESKTOP, "DESKTOP"   }};
+	{task_desktop,  STACK_SIZE_DESKTOP, "DESKTOP"   },
+	{task_net,      STACK_SIZE_NET,     "NET"       }};
 
 PUBLIC	struct task	user_proc_table[NR_NATIVE_PROCS] = {
 	/* entry    stack size     proc name */

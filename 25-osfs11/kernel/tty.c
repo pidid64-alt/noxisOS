@@ -215,6 +215,9 @@ PUBLIC void in_process(TTY* tty, u32 key)
 				break;
 			case END:
 				gui_put_char(GUI_KEY_END);
+			case DELETE:
+				gui_put_char(GUI_KEY_DEL);
+				break;
 				break;
 			default:	/* ESC, F-keys, ...: not typed text */
 				break;

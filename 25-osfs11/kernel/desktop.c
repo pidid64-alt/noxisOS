@@ -50,6 +50,9 @@ PRIVATE int  term_input_len;
  * (ticks, HZ per second). Any key skips the rest of the wait. */
 #define WELCOME_TICKS		(HZ * 2)
 
+/* Echo requests per `ping' (TASK_NET accepts up to 4). */
+#define PING_REPLY_MAX		4
+
 /* Raw directory-read scratch space: one sector more than the biggest root
  * directory we can ever show (WM_EXPL_MAX_ENTRIES x 16 bytes). */
 #define EXPL_RAW_MAX		(WM_EXPL_MAX_ENTRIES * 16 + 512)
@@ -64,6 +67,10 @@ PRIVATE void term_prompt(void);
 PRIVATE void term_key(char ch);
 PRIVATE void term_exec(char *line);
 PRIVATE void term_put_int(int value);
+PRIVATE void term_ping(const char *arg);
+PRIVATE void term_rm(const char *name);
+PRIVATE void term_write(const char *file, const char *text);
+PRIVATE int  term_parse_ip(const char *s, u32 *out);
 PRIVATE void term_puts_row(const EXPL_ENTRY *e);
 
 PRIVATE int  expl_refresh(void);
@@ -396,6 +403,192 @@ PRIVATE void term_cat(const char *name)
 }
 
 /*****************************************************************************
+ *                                term_parse_ip
+ *****************************************************************************
+ * Parse "a.b.c.d" into a host-order address. Returns 0 on success.
+ *****************************************************************************/
+PRIVATE int term_parse_ip(const char *s, u32 *out)
+{
+	u32 ip = 0;
+	int part;
+
+	if (s == 0)
+		return -1;
+	for (part = 0; part < 4; part++) {
+		int v = 0, digits = 0;
+
+		while (*s >= '0' && *s <= '9') {
+			v = v * 10 + (*s - '0');
+			s++;
+			digits++;
+			if (digits > 3 || v > 255)
+				return -1;
+		}
+		if (digits == 0)
+			return -1;
+		ip = (ip << 8) | (u32)v;
+		if (part < 3) {
+			if (*s != '.')
+				return -1;
+			s++;
+		}
+	}
+	if (*s != 0)
+		return -1;
+	*out = ip;
+	return 0;
+}
+
+/*****************************************************************************
+ *                                term_ping
+ *****************************************************************************
+ * `ping <ip|name>': resolve through TASK_NET (DNS via slirp), then send
+ * four ICMP echoes and print the round-trip times. The desktop task
+ * blocks in IPC while TASK_NET drives the NIC.
+ *****************************************************************************/
+PRIVATE void term_ping(const char *arg)
+{
+	static u32 rtts[PING_REPLY_MAX];
+	MESSAGE msg;
+	u32 ip = 0;
+	char ipbuf[16];
+	int i, received;
+
+	if (arg[0] == 0) {
+		wm_term_puts(&desktop, "usage: ping <a.b.c.d | name>\n");
+		return;
+	}
+
+	if (term_parse_ip(arg, &ip) != 0) {
+		reset_msg(&msg);
+		msg.type = NET_RESOLVE;
+		msg.PATHNAME = (void *)arg;
+		send_recv(BOTH, TASK_NET, &msg);
+		if (msg.RETVAL != 0) {
+			wm_term_puts(&desktop, "cannot resolve: ");
+			wm_term_puts(&desktop, (char *)arg);
+			wm_term_putc(&desktop, '\n');
+			return;
+		}
+		ip = (u32)msg.DEVICE;
+	}
+
+	ip_to_str(ip, ipbuf);
+	wm_term_puts(&desktop, "PING ");
+	wm_term_puts(&desktop, (char *)arg);
+	wm_term_puts(&desktop, " (");
+	wm_term_puts(&desktop, ipbuf);
+	wm_term_puts(&desktop, "): 4 requests\n");
+
+	reset_msg(&msg);
+	msg.type = NET_PING;
+	msg.u.m3.m3i1 = (int)ip;
+	msg.u.m3.m3i2 = PING_REPLY_MAX;
+	msg.BUF = rtts;
+	send_recv(BOTH, TASK_NET, &msg);
+
+	if (msg.u.m3.m3i1 < 0) {
+		wm_term_puts(&desktop, "no ARP response from ");
+		wm_term_puts(&desktop, ipbuf);
+		wm_term_putc(&desktop, '\n');
+		return;
+	}
+
+	received = msg.u.m3.m3i1;
+	for (i = 0; i < PING_REPLY_MAX; i++) {
+		if (rtts[i] == 0xFFFFFFFF) {
+			wm_term_puts(&desktop, "timeout for icmp_seq ");
+			term_put_int(i + 1);
+			wm_term_putc(&desktop, '\n');
+		} else {
+			wm_term_puts(&desktop, "reply from ");
+			wm_term_puts(&desktop, ipbuf);
+			wm_term_puts(&desktop, ": icmp_seq=");
+			term_put_int(i + 1);
+			wm_term_puts(&desktop, " time=");
+			term_put_int((int)rtts[i]);
+			wm_term_puts(&desktop, " ms\n");
+		}
+	}
+	term_put_int(received);
+	wm_term_puts(&desktop, " of 4 received\n");
+}
+
+/*****************************************************************************
+ *                                term_rm
+ *****************************************************************************
+ * `rm <file>': unlink and refresh the explorer.
+ *****************************************************************************/
+PRIVATE void term_rm(const char *name)
+{
+	char path[WM_EXPL_NAME_LEN + 2];
+	int k;
+
+	if (name[0] == 0) {
+		wm_term_puts(&desktop, "usage: rm <file>\n");
+		return;
+	}
+
+	path[0] = '/';
+	for (k = 0; name[k] && k < WM_EXPL_NAME_LEN - 1; k++)
+		path[k + 1] = name[k];
+	path[k + 1] = 0;
+
+	if (unlink(path) != 0) {
+		wm_term_puts(&desktop, "rm: cannot remove: ");
+		wm_term_puts(&desktop, (char *)name);
+		wm_term_putc(&desktop, '\n');
+		return;
+	}
+	wm_term_puts(&desktop, "removed ");
+	wm_term_puts(&desktop, (char *)name);
+	wm_term_putc(&desktop, '\n');
+	expl_refresh();
+}
+
+/*****************************************************************************
+ *                                term_write
+ *****************************************************************************
+ * `write <file> <text>': create (or truncate) a file and store the text.
+ *****************************************************************************/
+PRIVATE void term_write(const char *file, const char *text)
+{
+	char path[WM_EXPL_NAME_LEN + 2];
+	int fd, k, len = 0;
+
+	if (file[0] == 0) {
+		wm_term_puts(&desktop, "usage: write <file> <text>\n");
+		return;
+	}
+
+	path[0] = '/';
+	for (k = 0; file[k] && k < WM_EXPL_NAME_LEN - 1; k++)
+		path[k + 1] = file[k];
+	path[k + 1] = 0;
+
+	while (text[len])
+		len++;
+
+	fd = open(path, O_CREAT | O_RDWR);
+	if (fd < 0) {
+		wm_term_puts(&desktop, "write: cannot open: ");
+		wm_term_puts(&desktop, (char *)file);
+		wm_term_putc(&desktop, '\n');
+		return;
+	}
+	if (write(fd, text, len) != len)
+		wm_term_puts(&desktop, "write: short write\n");
+	close(fd);
+
+	wm_term_puts(&desktop, "wrote ");
+	term_put_int(len);
+	wm_term_puts(&desktop, " bytes to ");
+	wm_term_puts(&desktop, (char *)file);
+	wm_term_putc(&desktop, '\n');
+	expl_refresh();
+}
+
+/*****************************************************************************
  *                                term_exec
  *****************************************************************************
  * Run one terminal command line. Commands are matched case-insensitively.
@@ -404,7 +597,8 @@ PRIVATE void term_exec(char *line)
 {
 	char cmd[TERM_INPUT_MAX + 1];
 	char arg[TERM_INPUT_MAX + 1];
-	int i = 0, n = 0, a = 0;
+	char rest[TERM_INPUT_MAX + 1];
+	int i = 0, n = 0, a = 0, r = 0;
 
 	while (line[i] == ' ')			/* leading blanks */
 		i++;
@@ -424,6 +618,12 @@ PRIVATE void term_exec(char *line)
 		arg[a++] = line[i++];
 	arg[a] = 0;
 
+	while (line[i] == ' ')			/* rest of the line */
+		i++;
+	while (line[i] && r < TERM_INPUT_MAX)
+		rest[r++] = line[i++];
+	rest[r] = 0;
+
 	if (cmd[0] == 0)
 		return;
 
@@ -434,6 +634,15 @@ PRIVATE void term_exec(char *line)
 		             "ls | dir      list files\n");
 		wm_term_puts(&desktop,
 		             "cat <file>    show a file\n");
+		wm_term_puts(&desktop,
+		             "write <f> <t> create/write a file
+");
+		wm_term_puts(&desktop,
+		             "rm <file>     delete a file
+");
+		wm_term_puts(&desktop,
+		             "ping <ip|name> 4 icmp echoes
+");
 		wm_term_puts(&desktop,
 		             "end | poweroff  shut down\n");
 	}
@@ -464,6 +673,15 @@ PRIVATE void term_exec(char *line)
 	}
 	else if (strcmp(cmd, "cat") == 0 || strcmp(cmd, "type") == 0) {
 		term_cat(arg);
+	}
+	else if (strcmp(cmd, "write") == 0) {
+		term_write(arg, rest);
+	}
+	else if (strcmp(cmd, "rm") == 0 || strcmp(cmd, "del") == 0) {
+		term_rm(arg);
+	}
+	else if (strcmp(cmd, "ping") == 0) {
+		term_ping(arg);
 	}
 	else if (strcmp(cmd, "end") == 0 ||
 	         strcmp(cmd, "poweroff") == 0) {
@@ -601,13 +819,21 @@ PRIVATE int expl_refresh(void)
 
 	desktop.expl.n_entries = n;
 
-	/* Stable insertion sort by name so the explorer looks tidy. */
+	/* Stable insertion sort: directories first, then by name. */
 	for (i = 1; i < n; i++) {
 		EXPL_ENTRY key = desktop.expl.entries[i];
 		int j = i - 1;
-		while (j >= 0 &&
-		       strcmp(desktop.expl.entries[j].name, key.name) > 0) {
-			desktop.expl.entries[j + 1] = desktop.expl.entries[j];
+		int kr = (key.kind == 'd') ? 0 : 1;
+		while (j >= 0) {
+			EXPL_ENTRY *t = &desktop.expl.entries[j];
+			int tr = (t->kind == 'd') ? 0 : 1;
+			int c = tr - kr;
+
+			if (c == 0)
+				c = strcmp(t->name, key.name);
+			if (c <= 0)
+				break;
+			desktop.expl.entries[j + 1] = *t;
 			j--;
 		}
 		desktop.expl.entries[j + 1] = key;
@@ -778,7 +1004,22 @@ PRIVATE void expl_key(char ch)
 	case GUI_KEY_END:
 		e->cursor = e->n_entries - 1;
 		break;
-	case '\n':
+	case GUI_KEY_DEL: {
+		EXPL_ENTRY *ent;
+		char path[WM_EXPL_NAME_LEN + 2];
+		int k;
+
+		if (e->cursor < 0 || e->cursor >= e->n_entries)
+			break;
+		ent = &e->entries[e->cursor];
+		path[0] = '/';
+		for (k = 0; ent->name[k] && k < WM_EXPL_NAME_LEN - 1; k++)
+			path[k + 1] = ent->name[k];
+		path[k + 1] = 0;
+		if (unlink(path) == 0)
+			expl_refresh();
+		break;
+	}
 		expl_open_view(e->cursor);
 		break;
 	default:

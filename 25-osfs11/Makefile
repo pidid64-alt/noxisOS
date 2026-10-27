@@ -37,6 +37,7 @@ OBJS		= kernel/kernel.o kernel/start.o kernel/main.o\
 			kernel/systask.o kernel/hd.o\
 			kernel/gfx.o kernel/desktop.o kernel/vga.o kernel/wm.o kernel/mouse.o\
 			kernel/kliba.o kernel/klib.o\
+			net/main.o net/ne2000.o net/net.o net/arp.o net/ip.o net/dns.o\
 			lib/syslog.o\
 			mm/main.o mm/forkexit.o mm/exec.o\
 			fs/main.o fs/open.o fs/misc.o fs/read_write.o\
@@ -304,6 +305,24 @@ fs/link.o: fs/link.c
 fs/disklog.o: fs/disklog.c
 	$(CC) $(CFLAGS) -o $@ $<
 
+net/main.o: net/main.c net/net.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+net/ne2000.o: net/ne2000.c net/net.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+net/net.o: net/net.c net/net.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+net/arp.o: net/arp.c net/net.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+net/ip.o: net/ip.c net/net.h
+	$(CC) $(CFLAGS) -o $@ $<
+
+net/dns.o: net/dns.c net/net.h
+	$(CC) $(CFLAGS) -o $@ $<
+
 
 # --- Fresh desktop images (do not boot the historical checked-in binaries) ---
 DESKTOP_DIR = build/desktop
@@ -320,9 +339,14 @@ desktop-image:
 	$(MAKE) -C command everything
 	python3 scripts/desktop_image.py --output $(DESKTOP_DIR)
 
+# Networking: NE2000 on QEMU's slirp LAN (guest 10.0.2.15, gw 10.0.2.2,
+# DNS 10.0.2.3) so the desktop TTY can `ping google.com'.
+NETDEV = -netdev user,id=net0 -device ne2k_isa,netdev=net0,iobase=0x300,irq=9
+
 run-desktop: desktop-image
 	$(QEMU) -m 32 -drive file=$(DESKTOP_DIR)/a.img,format=raw,if=floppy \
-		-drive file=$(DESKTOP_DIR)/100m.img,format=raw,if=ide,index=0 -boot a
+		-drive file=$(DESKTOP_DIR)/100m.img,format=raw,if=ide,index=0 \
+		$(NETDEV) -boot a
 
 desktop-iso: desktop-image
 	mkdir -p $(DESKTOP_DIR)/iso
