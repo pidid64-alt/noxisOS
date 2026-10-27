@@ -361,12 +361,16 @@ static void cmd_ping(char *args) {
         uint8_t mac[6];
         int ok = 0;
 
-        /* Resolve the next hop; the very first lookup sends the ARP
-         * request, subsequent ones just wait for the reply. */
+        /* Resolve the NEXT HOP, not the destination: off-subnet targets
+         * (e.g. 8.8.8.8) are reached through the gateway, and the gateway
+         * only answers ARP for its own addresses, so asking the local wire
+         * for a foreign IP never resolves. Same rule as in ip_send(). */
+        uint32_t hop = ((ip ^ net_ip) & net_mask) ? net_gw : ip;
+
         deadline = tick + 100;          /* 2 s for ARP */
         while ((int32_t)(tick - deadline) < 0) {
             net_poll();
-            if (arp_lookup(ip, mac) == 0) { ok = 1; break; }
+            if (arp_lookup(hop, mac) == 0) { ok = 1; break; }
             asm volatile("hlt");
         }
         if (!ok) {
