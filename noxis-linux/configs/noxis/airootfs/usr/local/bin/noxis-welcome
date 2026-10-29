@@ -19,7 +19,29 @@ fi
 
 (( short )) && exit 0
 
+# a small tips-rotation: one random line printed at the bottom of the block
+tips=(
+    "sudo pacman -Syu keeps you rolling"
+    "paru -S <package> builds from the AUR"
+    "noxis-repo-tier switches to x86-64-v3/v4 optimized builds"
+    "Super+Z shows the fetch card"
+    "hyprctl reload applies config edits live"
+    "Super+K lists open windows"
+    "Super+Escape opens the session menu"
+    "fetch shows the cat — nine lives, one kernel"
+    "please is just sudo, but with manners"
+    "Super+W brings this screen back"
+)
+tip="${tips[RANDOM % ${#tips[@]}]}"
+
 cat <<TXT
+
+        /\_/\        ✦
+       ( o.o )    noxisOS
+        > ^ <  ✦
+       /     \\
+      (       )   ✦
+       \_____/~
 
   Welcome to NoxisOS Cachy Edition — an Arch/CachyOS rolling release
   with an optimized kernel, the CachyOS repositories and a Hyprland
@@ -48,5 +70,7 @@ ${installer_line}
     github.com/pidid64-alt/noxisOS ...... this project
     wiki.cachyos.org .................... CachyOS docs (applies here)
     wiki.archlinux.org .................. Arch Linux wiki
+
+  ✦ Tip: ${tip}
 
 TXT

@@ -37,6 +37,8 @@ alias aursearch='paru -Ss'
 
 # noxis helpers
 alias ff='fastfetch'
+alias fetch='fastfetch --config /etc/fastfetch/config.jsonc'
+alias please='sudo'
 alias welcome='noxis-welcome'
 alias install-os='noxis-install'
 alias hardware='noxis-hardware'
@@ -56,6 +58,14 @@ __noxis_git_branch() {
 PS1='\[\e[38;2;139;92;246m\]\u\[\e[0m\]@\[\e[38;2;34;211;238m\]\h\[\e[0m\] \[\e[38;2;161;161;170m\]\w\[\e[0m\]$(__noxis_git_branch) \[\e[38;2;139;92;246m\]❯\[\e[0m\] '
 
 # show the banner once per shell (press any key skips it)
+# greet on interactive shells: the first terminal of a session gets the
+# full fastfetch + hints, later ones just a one-line reminder
 if [[ -t 1 && -z ${NOXIS_QUIET:-} && -x /usr/local/bin/noxis-welcome ]]; then
-    /usr/local/bin/noxis-welcome --short
+    if [[ -e /tmp/.noxis-greeted ]]; then
+        printf '[38;2;139;92;246mnoxis[0m: Super+Z for fetch, Super+W for hints
+'
+    else
+        touch /tmp/.noxis-greeted
+        /usr/local/bin/noxis-welcome
+    fi
 fi

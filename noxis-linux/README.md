@@ -34,8 +34,11 @@ disk with Calamares — **without any network connection**.
   «no bootable device» при записи на флешку.
 * Запись на флешку: `sudo dd if=noxis.iso of=/dev/sdX bs=4M status=progress oflag=sync`
   (на Windows — Rufus в режиме *DD image mode*).
-* В live-сессии: `Super+Return` — терминал, `Super+D` — меню, `noxis-install` —
-  установщик, `noxis-welcome` — подсказки.
+* В live-сессии: `Super+Return` — терминал, `Super+D` — меню, `Super+Z` — карточка
+  с информацией о системе (fastfetch), `noxis-install` — установщик,
+  `noxis-welcome` — подсказки.
+* Первый терминал сессии встречает вас котом из fastfetch; в терминале живут
+  алиасы `fetch` (снова показать кота) и `please` (sudo, но вежливый).
 
 ---
 

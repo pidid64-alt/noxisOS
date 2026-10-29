@@ -1,6 +1,6 @@
 /* noxis-linux — waybar theme (violet / cyan on glass) */
 * {
-    font-family: "JetBrainsMono Nerd Font", "Noto Sans", sans-serif;
+    font-family: "JetBrainsMono Nerd Font", "Font Awesome 6 Free", "Noto Sans", sans-serif;
     font-size: 13px;
     font-weight: 600;
     min-height: 0;
@@ -18,6 +18,7 @@ window#waybar {
     border: 1px solid rgba(139, 92, 246, 0.28);
     border-radius: 14px;
     padding: 2px 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
 #workspaces {
@@ -56,11 +57,12 @@ window#waybar {
 }
 
 #clock, #cpu, #memory, #temperature, #network, #bluetooth,
-#pulseaudio, #battery, #tray, #idle_inhibitor {
+#pulseaudio, #battery, #tray, #idle_inhibitor, #submap {
     padding: 0 9px;
     margin: 4px 1px;
     border-radius: 10px;
     background: transparent;
+    transition: all 0.25s ease;
 }
 
 #clock {
@@ -75,13 +77,24 @@ window#waybar {
 #bluetooth  { color: #60a5fa; }
 #pulseaudio { color: #c4b5fd; }
 #idle_inhibitor { color: #94a3b8; }
+#submap     { color: #22d3ee; font-weight: 700; }
+
+#network.disconnected { color: #6b7280; }
+#bluetooth.disabled   { color: #4b5563; }
+#pulseaudio.muted     { color: #6b7280; }
+
+#idle_inhibitor.activated {
+    color: #22d3ee;
+    background: rgba(34, 211, 238, 0.16);
+}
 
 #temperature.critical {
     background: rgba(244, 63, 94, 0.85);
     color: #ffffff;
 }
 
-#battery        { color: #86efac; }
+#battery { color: #86efac; }
+#battery.charging, #battery.plugged { color: #22d3ee; }
 #battery.warning { color: #fbbf24; }
 #battery.critical {
     color: #f43f5e;
@@ -94,7 +107,10 @@ window#waybar {
     padding: 0 10px;
     margin: 4px 2px;
     border-radius: 10px;
+    transition: all 0.25s ease;
 }
+
+#custom-clipboard { color: #67e8f9; }
 
 #custom-install {
     color: #0b0b12;
@@ -106,9 +122,20 @@ window#waybar {
     background: rgba(244, 63, 94, 0.16);
 }
 
-#custom-power:hover, #custom-install:hover {
-    background: rgba(139, 92, 246, 0.45);
+#clock:hover, #cpu:hover, #memory:hover, #temperature:hover, #network:hover,
+#bluetooth:hover, #pulseaudio:hover, #battery:hover, #idle_inhibitor:hover,
+#submap:hover, #custom-clipboard:hover {
+    background: rgba(139, 92, 246, 0.18);
+}
+
+#custom-power:hover {
+    background: rgba(244, 63, 94, 0.35);
     color: #ffffff;
+}
+
+#custom-install:hover {
+    background: linear-gradient(135deg, #a78bfa 0%, #67e8f9 100%);
+    color: #0b0b12;
 }
 
 tooltip {

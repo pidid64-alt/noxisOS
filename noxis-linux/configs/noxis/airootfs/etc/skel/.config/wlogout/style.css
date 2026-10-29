@@ -18,6 +18,7 @@ button {
     background-position: center;
     background-size: 25%;
     font-size: 16px;
+    outline-style: none;
 }
 
 button:focus, button:active, button:hover {
@@ -25,6 +26,7 @@ button:focus, button:active, button:hover {
     border-color: #22d3ee;
     color: #ffffff;
     outline-style: none;
+    box-shadow: 0 0 18px rgba(34, 211, 238, 0.25);
 }
 
 #lock     { background-image: image(url("/usr/share/wlogout/icons/lock.png")); }
