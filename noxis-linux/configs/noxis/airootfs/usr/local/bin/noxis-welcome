@@ -34,6 +34,7 @@ cat <<TXT
     Super + 1..0 ......... switch workspace
     Super + M ............ session menu (wlogout)
     Super + Shift + S .... screenshot region -> clipboard
+    Super + Z ............ fetch (system info card)
     Super + W ............ show this screen again
 
   Things to try
