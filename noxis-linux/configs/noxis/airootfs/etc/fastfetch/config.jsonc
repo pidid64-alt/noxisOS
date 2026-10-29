@@ -8,7 +8,7 @@
     "display": {
         "separator": "  ",
         "color": { "keys": "38;2;139;92;246", "title": "38;2;34;211;238" },
-        "key": { "width": 10 }
+        "key": { "width": 12 }
     },
     "modules": [
         { "type": "title", "format": "{user-name}@{host-name}" },
@@ -26,7 +26,7 @@
         { "type": "gpu",      "key": "  GPU" },
         { "type": "memory",   "key": "  MEMORY",   "format": "{used} / {total}" },
         { "type": "swap",     "key": "  SWAP",     "format": "{used} / {total}" },
-        { "type": "disk",     "key": "  DISK",     "format": "{size-used} / {size-total} ({used-percentage})" },
+        { "type": "disk",     "key": "  DISK",     "folders": [ "/" ], "format": "{size-used} / {size-total} ({used-percentage})" },
         { "type": "localip",  "key": "  IP",       "format": "{ipv4}" },
         { "type": "battery",  "key": "  BATTERY" },
         { "type": "locale",   "key": "  LOCALE" },
