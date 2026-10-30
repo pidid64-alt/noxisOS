@@ -24,13 +24,15 @@ tips=(
     "sudo pacman -Syu keeps you rolling"
     "paru -S <package> builds from the AUR"
     "noxis-repo-tier switches to x86-64-v3/v4 optimized builds"
-    "Super+Z shows the fetch card"
+    "Super+Z picks a random cat — collect them all"
     "hyprctl reload applies config edits live"
     "Super+K lists open windows"
     "Super+Escape opens the session menu"
     "fetch shows the cat — nine lives, one kernel"
     "please is just sudo, but with manners"
     "Super+W brings this screen back"
+    "meow in the terminal makes the cat talk"
+    "reboot once to meet the marching paws"
 )
 tip="${tips[RANDOM % ${#tips[@]}]}"
 
@@ -56,11 +58,12 @@ cat <<TXT
     Super + 1..0 ......... switch workspace
     Super + M ............ session menu (wlogout)
     Super + Shift + S .... screenshot region -> clipboard
-    Super + Z ............ fetch (system info card)
+    Super + Z ............ fetch card (random cat every time)
     Super + W ............ show this screen again
 
   Things to try
 ${installer_line}
+    meow ................. ask the cat (try it in the terminal!)
     noxis-hardware ....... detect hardware, install drivers (chwd)
     noxis-repo-tier ...... switch to x86-64-v3/v4 optimized packages
     sudo pacman -Syu ..... update everything (rolling release!)

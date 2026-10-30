@@ -82,6 +82,7 @@ amd-ucode
 intel-ucode
 mkinitcpio
 mkinitcpio-archiso
+plymouth
 zram-generator
 fwupd
 bolt

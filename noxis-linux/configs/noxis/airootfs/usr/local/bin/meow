@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# meow — the noxis cat has something to say. A tiny easter egg for the
+# terminal; safe to run as often as you like (the cat never gets tired).
+set -euo pipefail
+
+phrases=(
+    "nine lives, one kernel"
+    "kernel petted successfully"
+    "this incident will be purred"
+    "soft paws, hard kernel"
+    "9 lives remaining"
+    "the box is a lie. the cat is in it anyway"
+    "have you tried turning it off and on again? *purr*"
+    "uptime makes the cat sleepy"
+)
+msg="${phrases[RANDOM % ${#phrases[@]}]}"
+
+violet=$'\033[38;2;139;92;246m'
+cyan=$'\033[38;2;34;211;238m'
+reset=$'\033[0m'
+
+w=${#msg}
+printf ' %s\n' "$(printf '%*s' "$w" '' | tr ' ' '_')"
+printf '%s<%s %s %s>%s\n' "$cyan" "$reset" "$msg" "$cyan" "$reset"
+printf ' %s\n' "$(printf '%*s' "$w" '' | tr ' ' '-')"
+printf '%s' "$violet"
+cat <<'ART'
+        \   /\_/\
+         \ ( o.o )
+          \ > ^ <
+ART
+printf '%s\n' "$reset"

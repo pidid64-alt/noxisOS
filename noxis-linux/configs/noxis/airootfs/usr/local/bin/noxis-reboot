@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# noxis-reboot — wlogout "Reboot": one meow, then the paws march again.
+exec 2>/dev/null
+noxis-sound off || true
+exec systemctl reboot

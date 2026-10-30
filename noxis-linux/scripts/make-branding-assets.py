@@ -14,6 +14,7 @@ Derived (also committed, so a plain `mkarchiso` run works without Pillow):
     configs/noxis/airootfs/etc/calamares/branding/noxis/*.png
         logo.png productIcon.png productWelcome.png productWallpaper.png
         slide1.png slide2.png slide3.png
+    configs/noxis/airootfs/usr/share/plymouth/themes/noxis-paws/paw-{a,b}.png
 
 Usage:  python3 scripts/make-branding-assets.py
 Requires: Pillow (`pip install Pillow`) and a DejaVu font for the slides.
@@ -111,6 +112,24 @@ def slide(background: Image.Image, title: str, lines: list[str], index: int) -> 
     return img
 
 
+def paw_sprite_frame(*, a: int, size: int = 56) -> Image.Image:
+    """One frame of the plymouth paw. `a=1` lifts the left toes, `a=0` the
+    right ones — alternating frames read as a paw taking a step."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img, "RGBA")
+    s = size / 56.0
+    pad = (*VIOLET, 235)
+
+    # main pad
+    draw.ellipse([(18 * s, 28 * s), (38 * s, 46 * s)], fill=pad)
+    # toe beans; the lifted side shrinks a little to suggest a step
+    toes = [(12, 20, 14 if a else 10), (24, 14, 12), (36, 20, 10 if a else 14)]
+    for cx, cy, r in toes:
+        draw.ellipse([(cx * s - r * s, cy * s - r * s),
+                      (cx * s + r * s, cy * s + r * s)], fill=pad)
+    return img
+
+
 def main() -> int:
     logo_master = Image.open(ASSETS / "noxis-logo.png").convert("RGB")
     wallpaper_master = Image.open(ASSETS / "noxis-wallpaper.png").convert("RGB")
@@ -170,6 +189,11 @@ def main() -> int:
     ]
     for index, (title, lines) in enumerate(slides, start=1):
         write(slide(base, title, lines, index), BRAND / f"slide{index}.png")
+
+    print("plymouth paws splash")
+    paws = PROFILE / "airootfs" / "usr" / "share" / "plymouth" / "themes" / "noxis-paws"
+    write(paw_sprite_frame(a=1), paws / "paw-a.png")
+    write(paw_sprite_frame(a=0), paws / "paw-b.png")
 
     print("done")
     return 0

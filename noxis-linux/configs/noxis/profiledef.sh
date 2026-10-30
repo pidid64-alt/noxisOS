@@ -43,6 +43,11 @@ file_permissions=(
   ["/usr/local/bin/noxis-install"]="0:0:755"
   ["/usr/local/bin/noxis-hardware"]="0:0:755"
   ["/usr/local/bin/noxis-repo-tier"]="0:0:755"
+  ["/usr/local/bin/noxis-fetch"]="0:0:755"
+  ["/usr/local/bin/noxis-sound"]="0:0:755"
+  ["/usr/local/bin/noxis-poweroff"]="0:0:755"
+  ["/usr/local/bin/noxis-reboot"]="0:0:755"
+  ["/usr/local/bin/meow"]="0:0:755"
   # mkarchiso copies airootfs with --no-preserve=mode, so every executable that
   # is not listed here ends up as 0644 in the image (pkexec then fails with
   # "Permission denied"). Keep this list in sync with the shebang files;

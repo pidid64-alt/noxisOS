@@ -21,8 +21,8 @@
         "format-icons": {
             "1": "1", "2": "2", "3": "3", "4": "4", "5": "5",
             "6": "6", "7": "7", "8": "8", "9": "9", "10": "10",
-            "urgent": "\uf071",
-            "active": "",
+            "urgent": "\U0001F63F",
+            "active": "\U0001F43E",
             "default": ""
         }
     },
@@ -112,9 +112,9 @@
         "interval": 30,
         "states": { "warning": 30, "critical": 15 },
         "format": "{icon} {capacity}%",
-        "format-charging": "\uf1e6  {capacity}%",
-        "format-plugged": "\uf1e6  {capacity}%",
-        "format-icons": ["\uf244", "\uf243", "\uf242", "\uf241", "\uf240"],
+        "format-charging": "\U0001F63B  {capacity}%",
+        "format-plugged": "\U0001F638  {capacity}%",
+        "format-icons": ["\U0001F63F", "\U0001F63E", "\U0001F60C", "\U0001F63A", "\U0001F638"],
         "tooltip-format": "{timeTo} ({capacity}%)"
     },
 

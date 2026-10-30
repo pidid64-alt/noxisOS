@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# noxis-sound <login|off> — the noxis meow. Best effort: never blocks the
+# session and never fails the caller.
+#
+#   login — played once Hyprland is up (delayed a beat so PipeWire appears)
+#   off   — played synchronously before poweroff/reboot (wlogout wrappers)
+set -u
+
+case ${1:-} in
+    login) file=/usr/share/sounds/noxis/meow.wav ;;
+    off)   file=/usr/share/sounds/noxis/meow-off.wav ;;
+    *)     exit 0 ;;
+esac
+[[ -f $file ]] || exit 0
+
+play() {
+    if command -v pw-play >/dev/null 2>&1; then
+        pw-play "$file"
+    elif command -v mpv >/dev/null 2>&1; then
+        mpv --no-video --no-audio-display --really-quiet "$file"
+    elif command -v paplay >/dev/null 2>&1; then
+        paplay "$file"
+    fi
+    return 0
+}
+
+if [[ $1 == login ]]; then
+    ( sleep 1.2 && play ) >/dev/null 2>&1 &
+else
+    play
+fi
+exit 0

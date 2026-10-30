@@ -1,0 +1,45 @@
+// noxis-paws — the noxisOS boot splash: a dark screen, the wordmark and a
+// row of paws that marches in place while the system boots. Pure plymouth
+// script; the paw sprites alternate between two frames (paw-a.png/paw-b.png).
+
+// ---- background -----------------------------------------------------------
+// #0b0b12 — the same ink as the noxis wallpapers
+Window.SetBackgroundTopColor(0.043, 0.043, 0.071);
+Window.SetBackgroundBottomColor(0.043, 0.043, 0.071);
+
+// ---- wordmark -------------------------------------------------------------
+wordmark = Image.Text("noxisOS", 0.545, 0.361, 0.965);
+wordmark_sprite = Sprite();
+wordmark_sprite.SetImage(wordmark);
+wordmark_sprite.SetPosition(Window.GetWidth() / 2 - wordmark.GetWidth() / 2,
+                            Window.GetHeight() / 2 - wordmark.GetHeight() - 48, 1);
+
+// ---- the marching paws ----------------------------------------------------
+NUM_PAWS = 5;
+paw_a = Image("paw-a.png");
+paw_b = Image("paw-b.png");
+
+gap = paw_a.GetWidth() + 28;
+start_x = Window.GetWidth() / 2 - (NUM_PAWS * gap) / 2 + gap / 2;
+base_y = Window.GetHeight() / 2 + 64;
+
+for (i = 0; i < NUM_PAWS; i++) {
+    paw_sprite[i] = Sprite();
+    paw_sprite[i].SetImage(paw_a);
+    paw_sprite[i].SetPosition(start_x + i * gap - paw_a.GetWidth() / 2,
+                              base_y - paw_a.GetHeight() / 2, 1);
+}
+
+tick = 0;
+fun refresh_callback() {
+    tick++;
+    lifted = Math.Int(tick / 12) % NUM_PAWS;
+    for (i = 0; i < NUM_PAWS; i++) {
+        if (i == lifted) {
+            paw_sprite[i].SetImage(paw_b);
+        } else {
+            paw_sprite[i].SetImage(paw_a);
+        }
+    }
+}
+Plymouth.SetRefreshFunction(refresh_callback);

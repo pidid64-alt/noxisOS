@@ -18,13 +18,13 @@
 }
 {
     "label" : "reboot",
-    "action" : "systemctl reboot",
+    "action" : "noxis-reboot",
     "text" : "Reboot",
     "keybind" : "r"
 }
 {
     "label" : "shutdown",
-    "action" : "systemctl poweroff",
+    "action" : "noxis-poweroff",
     "text" : "Shutdown",
     "keybind" : "s"
 }

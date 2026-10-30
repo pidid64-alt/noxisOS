@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=noxis-paws
+Description=noxisOS — nine lives, one kernel (marching paws boot splash)
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/noxis-paws
+ScriptFile=noxis-paws.script

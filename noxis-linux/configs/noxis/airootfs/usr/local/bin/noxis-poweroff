@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# noxis-poweroff — wlogout "Shutdown": the cat says goodbye, then goes down.
+exec 2>/dev/null
+noxis-sound off || true
+exec systemctl poweroff

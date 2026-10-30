@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# noxis-fetch — Super+Z: the noxis fetch card, with a random cat each run.
+# The cats live in /usr/share/noxis/ascii-cats/ and use the same $1/$2 color
+# placeholders as the master logo, so /etc/fastfetch/config.jsonc colors them.
+set -euo pipefail
+shopt -s nullglob
+
+cats=(/usr/share/noxis/ascii-cats/cat-*.txt)
+if (( ${#cats[@]} )); then
+    exec fastfetch --config /etc/fastfetch/config.jsonc \
+                   --logo "${cats[RANDOM % ${#cats[@]}]}"
+fi
+exec fastfetch --config /etc/fastfetch/config.jsonc
